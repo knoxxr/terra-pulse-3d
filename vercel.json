@@ -1,22 +1,18 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "regions": ["icn1", "hnd1", "sfo1", "fra1"],
+  "regions": ["icn1"],
   "functions": {
     "src/app/api/air-quality/route.ts": {
-      "memory": 1024,
-      "maxDuration": 25
+      "maxDuration": 30
     },
     "src/app/api/weather-ocean/route.ts": {
-      "memory": 512,
-      "maxDuration": 20
+      "maxDuration": 25
     },
     "src/app/api/earthquakes/route.ts": {
-      "memory": 512,
       "maxDuration": 15
     },
     "src/app/api/point-inspect/route.ts": {
-      "memory": 512,
       "maxDuration": 15
     }
   },

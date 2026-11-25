@@ -7,24 +7,27 @@ import LayerDock from "./LayerDock";
 import EventFeedDrawer from "./EventFeedDrawer";
 import InspectorPanel from "./InspectorPanel";
 import ArchitectureModal from "./ArchitectureModal";
+import ZoomControls from "./ZoomControls";
+import TelemetryHud from "./TelemetryHud";
 import type {
   AirQualityPayload,
   ApiEnvelope,
+  CameraTelemetry,
   DataSourceStatus,
   EarthquakeEvent,
   LayerVisibility,
   QuakeWindow,
   SelectedItem,
   WeatherOceanPayload,
+  ZoomCommand,
 } from "@/types/telemetry";
 
-// Dynamic import keeps WebGL Three.js completely client-side (zero SSR overhead on Vercel!)
 const EarthGlobe = dynamic(() => import("./EarthGlobe"), {
   ssr: false,
   loading: () => (
     <div className="globe-loading">
       <div className="globe-spinner" />
-      <p>3D 지구본 텔레메트리 엔진 초기화 중...</p>
+      <p>고정밀 50m 3D 지구본 텔레메트리 엔진 초기화 중...</p>
     </div>
   ),
 });
@@ -54,6 +57,8 @@ export default function TerraPulseApp() {
     ocean: true,
     airQuality: true,
     dayNight: true,
+    clouds: true,
+    labels: true,
     autoRotate: false,
   });
 
@@ -85,9 +90,16 @@ export default function TerraPulseApp() {
     altitude?: number;
     nonce: number;
   } | null>(null);
+  const [zoomCommand, setZoomCommand] = useState<ZoomCommand | null>(null);
+  const [telemetry, setTelemetry] = useState<CameraTelemetry>({
+    altitudeKm: 10512,
+    zoomPct: 58,
+    cursorLat: null,
+    cursorLng: null,
+  });
+
   const [feedOpen, setFeedOpen] = useState(false);
   const [archOpen, setArchOpen] = useState(false);
-  const [hintDismissed, setHintDismissed] = useState(false);
 
   const nonceRef = useRef(1);
 
@@ -96,7 +108,35 @@ export default function TerraPulseApp() {
     setFlyToTarget({ lat, lng, altitude, nonce: nonceRef.current });
   }, []);
 
-  // Initial parallel load & visibility-aware polling (reduces background traffic for scale)
+  const triggerZoom = useCallback((action: ZoomCommand["action"]) => {
+    nonceRef.current += 1;
+    setZoomCommand({ action, nonce: nonceRef.current });
+  }, []);
+
+  // Keyboard zoom & close shortcuts (+ / - / 0 / Escape)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.key === "+" || e.key === "=") {
+        e.preventDefault();
+        triggerZoom("in");
+      } else if (e.key === "-" || e.key === "_") {
+        e.preventDefault();
+        triggerZoom("out");
+      } else if (e.key === "0") {
+        e.preventDefault();
+        triggerZoom("reset");
+      } else if (e.key === "Escape") {
+        setSelected(null);
+        setArchOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [triggerZoom]);
+
+  // Initial parallel load & visibility-aware polling
   useEffect(() => {
     let active = true;
     const fetchQuakes = async () => {
@@ -108,7 +148,7 @@ export default function TerraPulseApp() {
         setEarthquakes(json.data);
         setQuakeMeta(json.meta);
       } catch {
-        // Keep previous data silently on transient network blip
+        // Keep previous data silently
       }
     };
     void fetchQuakes();
@@ -176,11 +216,9 @@ export default function TerraPulseApp() {
   const handleSelectItem = useCallback(
     (item: SelectedItem, altitude?: number) => {
       setSelected(item);
-      setHintDismissed(true);
       const lat = item.kind === "point" ? item.lat : item.data.lat;
       const lng = item.kind === "point" ? item.lng : item.data.lng;
       triggerFlyTo(lat, lng, altitude);
-      // On small screens, close event feed when opening inspector so view stays uncluttered
       if (typeof window !== "undefined" && window.innerWidth < 900) {
         setFeedOpen(false);
       }
@@ -191,8 +229,7 @@ export default function TerraPulseApp() {
   const handleSearchLocation = useCallback(
     (lat: number, lng: number, label: string, altitude?: number) => {
       setSelected({ kind: "point", lat, lng, label });
-      setHintDismissed(true);
-      triggerFlyTo(lat, lng, altitude ?? 2.1);
+      triggerFlyTo(lat, lng, altitude ?? 1.72);
     },
     [triggerFlyTo]
   );
@@ -224,7 +261,9 @@ export default function TerraPulseApp() {
         layers={layers}
         selected={selected}
         flyToTarget={flyToTarget}
+        zoomCommand={zoomCommand}
         onSelect={handleSelectItem}
+        onTelemetry={setTelemetry}
       />
 
       <TopBar
@@ -237,19 +276,22 @@ export default function TerraPulseApp() {
         onSelectLocation={handleSearchLocation}
       />
 
-      {!hintDismissed && !selected && !feedOpen && (
-        <div className="onboarding-hint" role="status">
-          <span>지구본을 드래그해 회전하고, 마커나 원하는 지점을 탭해 실시간 기상·해양·대기질을 확인하세요</span>
-          <button
-            type="button"
-            className="hint-dismiss"
-            onClick={() => setHintDismissed(true)}
-            aria-label="안내 닫기"
-          >
-            확인
-          </button>
-        </div>
-      )}
+      <TelemetryHud
+        telemetry={telemetry}
+        earthquakes={earthquakes}
+        ocean={weatherOcean.ocean}
+        airQuality={airQuality.clusters}
+        onQuickSelect={handleSelectItem}
+      />
+
+      <ZoomControls
+        zoomPct={telemetry.zoomPct}
+        altitudeKm={telemetry.altitudeKm}
+        inspectorOpen={Boolean(selected)}
+        onZoomIn={() => triggerZoom("in")}
+        onZoomOut={() => triggerZoom("out")}
+        onResetView={() => triggerZoom("reset")}
+      />
 
       <EventFeedDrawer
         open={feedOpen}

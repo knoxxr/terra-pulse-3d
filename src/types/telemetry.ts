@@ -132,5 +132,19 @@ export interface LayerVisibility {
   ocean: boolean;
   airQuality: boolean;
   dayNight: boolean;
+  clouds: boolean;
+  labels: boolean;
   autoRotate: boolean;
+}
+
+export interface CameraTelemetry {
+  altitudeKm: number;
+  zoomPct: number; // 0..100
+  cursorLat: number | null;
+  cursorLng: number | null;
+}
+
+export interface ZoomCommand {
+  action: "in" | "out" | "reset";
+  nonce: number;
 }

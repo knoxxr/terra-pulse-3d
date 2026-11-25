@@ -24,8 +24,8 @@ USGS 실시간 지진, Open-Meteo(NOAA GFS · ECMWF) 글로벌 기상 및 해양
 3. **서버 사이드 공간 격자 집계 (Payload 압축)**:
    - Sensor.Community 원본 JSON(~10MB, 17,000+ 레코드)을 서버에서 `0.85°` 격자로 집계해 ~55KB(gzip ~16KB)로 압축 전송.
    - Open-Meteo 다중 좌표 배치 쿼리로 전 지구 기상·해양 데이터를 단 2회의 업스트림 요청으로 수집.
-4. **오프라인 프로시저럴 4K/2K 지구 텍스처 + InstancedMesh**:
-   - Natural Earth 벡터(`world-atlas`)로 브라우저에서 선명한 주간/야간 도시불빛 텍스처를 즉시 생성하고, `THREE.InstancedMesh`로 수천 개 데이터를 최소 GPU 드로우콜로 렌더링.
+4. **고정밀 50m 벡터 지형 · 3D 오버레이 + InstancedMesh**:
+   - Natural Earth 50m 벡터(`countries-50m.json`) 기반 4K/2K 지형 릴리프·해저 지형·범프맵·구름층·야간 도시 불빛과 딥 줌에서도 선명한 3D 벡터 해안선·국경선 오버레이, 줌 적응형 지명/기온 라벨을 `THREE.InstancedMesh`와 함께 60fps로 렌더링.
 
 ## 로컬 실행 & Vercel 배포
 
@@ -38,4 +38,4 @@ npm run dev
 
 - 별도 API 키 없이 **즉시 배포 및 실시간 동작**합니다.
 - 선택적으로 Vercel Environment Variables에 `PURPLEAIR_API_KEY`를 추가하면 북미/글로벌 PurpleAir 센서 데이터가 자동 병합됩니다.
-- `vercel.json`에 리전(`icn1`, `hnd1`, `sfo1`, `fra1`) 및 서버리스 함수 메모리/타임아웃이 사전 구성되어 있습니다.
+- `vercel.json`에 리전(`icn1`) 및 서버리스 함수 타임아웃이 Hobby·Pro 플랜 모두 호환되도록 사전 구성되어 있습니다.

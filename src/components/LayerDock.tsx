@@ -3,11 +3,13 @@
 import React, { useState } from "react";
 import {
   Activity,
-  Radio,
+  Cloud,
   Moon,
+  Radio,
   RotateCw,
   SlidersHorizontal,
   Sun,
+  Tag,
   Waves,
   Wind,
 } from "lucide-react";
@@ -46,7 +48,37 @@ export default function LayerDock({
   return (
     <div className="dock-container">
       {filterOpen && (
-        <div className="dock-popover" role="region" aria-label="관측 필터 및 권역 이동">
+        <div className="dock-popover" role="region" aria-label="관측 필터 및 표시 옵션">
+          <div className="popover-section">
+            <div className="popover-label">지도 그래픽 표시 옵션</div>
+            <div className="segmented-row">
+              <button
+                type="button"
+                className={`seg-btn seg-btn-icon ${layers.clouds ? "is-selected" : ""}`}
+                onClick={() => onToggleLayer("clouds")}
+              >
+                <Cloud size={13} />
+                <span>구름층</span>
+              </button>
+              <button
+                type="button"
+                className={`seg-btn seg-btn-icon ${layers.labels ? "is-selected" : ""}`}
+                onClick={() => onToggleLayer("labels")}
+              >
+                <Tag size={13} />
+                <span>지명·기온</span>
+              </button>
+              <button
+                type="button"
+                className={`seg-btn seg-btn-icon ${layers.dayNight ? "is-selected" : ""}`}
+                onClick={() => onToggleLayer("dayNight")}
+              >
+                {layers.dayNight ? <Moon size={13} /> : <Sun size={13} />}
+                <span>주야간 조명</span>
+              </button>
+            </div>
+          </div>
+
           <div className="popover-section">
             <div className="popover-label">지진 수집 기간 (USGS)</div>
             <div className="segmented-row">
@@ -96,7 +128,7 @@ export default function LayerDock({
                   type="button"
                   className="jump-chip"
                   onClick={() => {
-                    onQuickJump(p.lat, p.lng, p.label, p.altitude);
+                    onQuickJump(p.lat, p.lng, p.label, p.altitude ? p.altitude - 0.35 : 1.9);
                     setFilterOpen(false);
                   }}
                 >
@@ -187,10 +219,21 @@ export default function LayerDock({
           type="button"
           className={`dock-icon-btn ${filterOpen ? "is-active" : ""}`}
           onClick={() => setFilterOpen((v) => !v)}
-          title="필터 · 권역 이동 · 범례"
-          aria-label="필터 및 권역 이동 열기"
+          title="필터 · 그래픽 옵션 · 권역 이동"
+          aria-label="필터 및 표시 옵션 열기"
         >
           <SlidersHorizontal size={16} />
+        </button>
+
+        <button
+          id="btn-toggle-labels"
+          type="button"
+          className={`dock-icon-btn ${layers.labels ? "is-active" : ""}`}
+          onClick={() => onToggleLayer("labels")}
+          title={layers.labels ? "지명·기온 라벨 표시 중" : "지명 라벨 숨김"}
+          aria-label="지명 라벨 전환"
+        >
+          <Tag size={15} />
         </button>
 
         <button

@@ -40,30 +40,89 @@ interface InspectorPanelProps {
   onClose: () => void;
 }
 
-function TempSparkline({ values, labels }: { values: number[]; labels: string[] }) {
-  if (values.length < 2) return null;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = Math.max(1, max - min);
+function formatKstTime(epochMs: number): string {
+  const kst = new Date(epochMs + 9 * 3600_000);
+  return `${kst.toISOString().slice(5, 10)} ${kst.toISOString().slice(11, 16)} KST`;
+}
+
+function WindCompassDial({
+  deg,
+  speedKmh,
+  label = "풍향",
+  accent = "#38bdf8",
+}: {
+  deg: number;
+  speedKmh: number;
+  label?: string;
+  accent?: string;
+}) {
+  return (
+    <div className="compass-widget">
+      <svg viewBox="0 0 64 64" className="compass-svg" aria-hidden="true">
+        <circle cx="32" cy="32" r="28" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.14)" strokeWidth="1.2" />
+        <circle cx="32" cy="32" r="21" fill="none" stroke="rgba(255,255,255,0.06)" strokeDasharray="2 3" />
+        <text x="32" y="11" textAnchor="middle" fill="#94a3b8" fontSize="7" fontWeight="600">N</text>
+        <text x="32" y="58" textAnchor="middle" fill="#64748b" fontSize="6.5">S</text>
+        <text x="55" y="34" textAnchor="middle" fill="#64748b" fontSize="6.5">E</text>
+        <text x="9" y="34" textAnchor="middle" fill="#64748b" fontSize="6.5">W</text>
+        <g transform={`rotate(${deg} 32 32)`}>
+          <line x1="32" y1="44" x2="32" y2="17" stroke={accent} strokeWidth="2.2" strokeLinecap="round" />
+          <polygon points="32,12 27.5,21 36.5,21" fill={accent} />
+          <circle cx="32" cy="32" r="3" fill="#f8fafc" />
+        </g>
+      </svg>
+      <div className="compass-info">
+        <span className="metric-k">{label} · 방위</span>
+        <strong className="metric-v mono">
+          {getCardinalDirKo(deg)} ({deg}°)
+        </strong>
+        <span className="compass-speed mono" style={{ color: accent }}>
+          {speedKmh.toFixed(1)} km/h
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function DualForecastChart({
+  temps,
+  winds,
+  labels,
+}: {
+  temps: number[];
+  winds: number[];
+  labels: string[];
+}) {
+  if (temps.length < 2) return null;
+  const minT = Math.min(...temps);
+  const maxT = Math.max(...temps);
+  const spanT = Math.max(1, maxT - minT);
+  const maxW = Math.max(10, ...winds);
   const W = 280;
-  const H = 56;
+  const H = 68;
   const padX = 6;
   const padY = 8;
 
-  const pts = values.map((v, i) => {
-    const x = padX + (i / (values.length - 1)) * (W - padX * 2);
-    const y = H - padY - ((v - min) / span) * (H - padY * 2);
+  const tempPts = temps.map((v, i) => {
+    const x = padX + (i / (temps.length - 1)) * (W - padX * 2);
+    const y = H - padY - ((v - minT) / spanT) * (H - padY * 2 - 6);
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   });
 
-  const areaPts = `${padX},${H - padY} ${pts.join(" ")} ${W - padX},${H - padY}`;
+  const windPts = winds.map((v, i) => {
+    const x = padX + (i / Math.max(1, winds.length - 1)) * (W - padX * 2);
+    const y = H - padY - (v / maxW) * (H - padY * 2) * 0.55;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+
+  const areaPts = `${padX},${H - padY} ${tempPts.join(" ")} ${W - padX},${H - padY}`;
 
   return (
     <div className="sparkline-card">
       <div className="sparkline-header">
-        <span>24시간 기온 추이 (UTC)</span>
+        <span>24시간 기온 · 풍속 추이 (UTC)</span>
         <span className="mono">
-          {min.toFixed(1)}° ~ {max.toFixed(1)}°C
+          {minT.toFixed(1)}° ~ {maxT.toFixed(1)}°C
         </span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} className="sparkline-svg" aria-hidden="true">
@@ -73,20 +132,108 @@ function TempSparkline({ values, labels }: { values: number[]; labels: string[] 
             <stop offset="100%" stopColor="#38bdf8" stopOpacity="0.02" />
           </linearGradient>
         </defs>
+        <line x1={padX} y1={H * 0.5} x2={W - padX} y2={H * 0.5} stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
         <polygon points={areaPts} fill="url(#tempFill)" />
+        {windPts.length > 1 && (
+          <polyline
+            points={windPts.join(" ")}
+            fill="none"
+            stroke="rgba(45, 212, 191, 0.55)"
+            strokeWidth="1.4"
+            strokeDasharray="2.5 2.5"
+          />
+        )}
         <polyline
-          points={pts.join(" ")}
+          points={tempPts.join(" ")}
           fill="none"
           stroke="#38bdf8"
-          strokeWidth="2"
+          strokeWidth="2.1"
           strokeLinecap="round"
           strokeLinejoin="round"
         />
       </svg>
       <div className="sparkline-axis mono">
         <span>{labels[0] ?? "00:00"}</span>
-        <span>{labels[Math.floor(labels.length / 2)] ?? "12:00"}</span>
+        <span className="sparkline-legend">
+          <i className="dot-sky" /> 기온 <i className="dot-teal" /> 풍속
+        </span>
         <span>{labels[labels.length - 1] ?? "23:00"}</span>
+      </div>
+    </div>
+  );
+}
+
+function Pm25SpectrumBar({ pm25 }: { pm25: number }) {
+  const pct = Math.max(2, Math.min(98, (pm25 / 110) * 100));
+  const lvl = getPm25Level(pm25);
+  return (
+    <div className="gauge-card">
+      <div className="gauge-header">
+        <span>WHO / 한국 대기질 지수 (PM2.5)</span>
+        <strong className="mono" style={{ color: lvl.color }}>
+          {lvl.label} ({pm25.toFixed(1)} µg/m³)
+        </strong>
+      </div>
+      <div className="spectrum-bar">
+        <div className="spectrum-seg seg-good" style={{ width: "18%" }} />
+        <div className="spectrum-seg seg-mod" style={{ width: "22%" }} />
+        <div className="spectrum-seg seg-bad" style={{ width: "30%" }} />
+        <div className="spectrum-seg seg-vbad" style={{ width: "30%" }} />
+        <span className="spectrum-needle" style={{ left: `${pct}%`, borderColor: lvl.color }} />
+      </div>
+      <div className="gauge-ticks mono">
+        <span>0 좋음</span>
+        <span>15</span>
+        <span>35 보통</span>
+        <span>75 나쁨</span>
+        <span>110+</span>
+      </div>
+    </div>
+  );
+}
+
+function QuakeDepthMeter({ mag, depthKm }: { mag: number; depthKm: number }) {
+  const magPct = Math.max(6, Math.min(98, ((mag - 1) / 7.5) * 100));
+  const depthPct = Math.max(3, Math.min(97, (depthKm / 650) * 100));
+  const color = getMagnitudeColor(mag);
+  const depthZone = depthKm < 70 ? "천발 (0–70km)" : depthKm < 300 ? "중발 (70–300km)" : "심발 (300km+)";
+
+  return (
+    <div className="gauge-stack">
+      <div className="gauge-card">
+        <div className="gauge-header">
+          <span>리히터 규모 스케일</span>
+          <strong className="mono" style={{ color }}>
+            M {mag.toFixed(1)}
+          </strong>
+        </div>
+        <div className="meter-track">
+          <div className="meter-fill" style={{ width: `${magPct}%`, background: color }} />
+        </div>
+        <div className="gauge-ticks mono">
+          <span>M1.0</span>
+          <span>M3.0</span>
+          <span>M5.0</span>
+          <span>M7.0+</span>
+        </div>
+      </div>
+
+      <div className="gauge-card">
+        <div className="gauge-header">
+          <span>진원 깊이 단면 · {depthZone}</span>
+          <strong className="mono">{depthKm.toFixed(1)} km</strong>
+        </div>
+        <div className="depth-track">
+          <span className="depth-zone-mark" style={{ left: "11%" }} />
+          <span className="depth-zone-mark" style={{ left: "46%" }} />
+          <span className="depth-pin" style={{ left: `${depthPct}%`, background: color }} />
+        </div>
+        <div className="gauge-ticks mono">
+          <span>지표 0km</span>
+          <span>70km</span>
+          <span>300km</span>
+          <span>650km</span>
+        </div>
       </div>
     </div>
   );
@@ -112,7 +259,6 @@ export default function InspectorPanel({
 
   const coordKey = coords ? `${coords.lat.toFixed(3)},${coords.lng.toFixed(3)}` : null;
 
-  // Fetch quantized 0.25° Open-Meteo Weather & Marine context for any clicked point/item
   useEffect(() => {
     if (!coords || !coordKey) return;
     let cancelled = false;
@@ -138,7 +284,6 @@ export default function InspectorPanel({
   const inspect = coordKey && inspectState?.key === coordKey ? inspectState.data : null;
   const loading = Boolean(coordKey && inspectState?.key !== coordKey);
 
-  // Compute nearest seismic event & nearest environmental sensor cluster client-side in O(N) (<1ms)
   const nearby = useMemo(() => {
     if (!coords) return { quake: null, sensor: null };
 
@@ -166,19 +311,18 @@ export default function InspectorPanel({
     if (selected.kind === "earthquake") {
       const q = selected.data;
       const color = getMagnitudeColor(q.mag);
-      const depthType = q.depthKm < 70 ? "천발 지진" : q.depthKm < 300 ? "중발 지진" : "심발 지진";
       return (
         <div className="inspector-hero">
           <div className="hero-badge-row">
             <span className="hero-pill mono" style={{ color, backgroundColor: `${color}22` }}>
               <Activity size={13} /> M {q.mag.toFixed(1)}
             </span>
-            <span className="hero-tag">{depthType}</span>
+            <span className="hero-tag">{timeAgoKo(q.time)}</span>
             {q.tsunami && <span className="tag-warn">쓰나미 경보 확인</span>}
           </div>
           <h2 className="inspector-title">{q.place}</h2>
           <p className="inspector-coord mono">
-            {formatCoord(q.lat, q.lng)} · {timeAgoKo(q.time)}
+            {formatCoord(q.lat, q.lng)} · {formatKstTime(q.time)}
           </p>
         </div>
       );
@@ -204,18 +348,26 @@ export default function InspectorPanel({
 
     if (selected.kind === "ocean") {
       const o = selected.data;
+      const seaState =
+        o.waveHeightM < 1.25
+          ? "잔잔함"
+          : o.waveHeightM < 2.5
+            ? "보통 물결"
+            : o.waveHeightM < 4.0
+              ? "높은 파고"
+              : "매우 거침";
       return (
         <div className="inspector-hero">
           <div className="hero-badge-row">
             <span className="hero-pill mono" style={{ color: "#2dd4bf", background: "rgba(45,212,191,0.16)" }}>
               <Waves size={13} /> 파고 {o.waveHeightM.toFixed(2)} m
             </span>
-            <span className="hero-tag">NOAA · ECMWF 해양 모델</span>
+            <span className="hero-tag">{seaState}</span>
           </div>
           <h2 className="inspector-title">
             {o.nameKo} <span className="title-sub">{o.name}</span>
           </h2>
-          <p className="inspector-coord mono">{formatCoord(o.lat, o.lng)}</p>
+          <p className="inspector-coord mono">{formatCoord(o.lat, o.lng)} · NOAA/ECMWF Marine</p>
         </div>
       );
     }
@@ -257,7 +409,6 @@ export default function InspectorPanel({
       className={`inspector-panel ${expandedMobile ? "is-expanded" : ""}`}
       aria-label="선택 지점 실시간 상세 데이터"
     >
-      {/* Mobile drag/expand handle */}
       <div className="sheet-handle-bar">
         <button
           type="button"
@@ -276,27 +427,17 @@ export default function InspectorPanel({
       <div className="inspector-scroll">
         {renderPrimaryHeader()}
 
-        {/* Earthquake Specific Metrics */}
         {selected.kind === "earthquake" && (
           <section className="inspector-section">
             <h3 className="section-label">지진 상세 계측 (USGS)</h3>
+            <QuakeDepthMeter mag={selected.data.mag} depthKm={selected.data.depthKm} />
             <div className="metric-grid">
               <div className="metric-cell">
-                <span className="metric-k">규모 (Mag)</span>
-                <strong className="metric-v mono" style={{ color: getMagnitudeColor(selected.data.mag) }}>
-                  {selected.data.mag.toFixed(1)}
-                </strong>
-              </div>
-              <div className="metric-cell">
-                <span className="metric-k">진원 깊이</span>
-                <strong className="metric-v mono">{selected.data.depthKm.toFixed(1)} km</strong>
-              </div>
-              <div className="metric-cell">
-                <span className="metric-k">중요도 지수</span>
+                <span className="metric-k">중요도 지수 (Sig)</span>
                 <strong className="metric-v mono">{selected.data.sig}</strong>
               </div>
               <div className="metric-cell">
-                <span className="metric-k">체감 신고</span>
+                <span className="metric-k">체감 신고 (DYFI)</span>
                 <strong className="metric-v mono">{selected.data.felt ?? 0}건</strong>
               </div>
             </div>
@@ -312,22 +453,20 @@ export default function InspectorPanel({
           </section>
         )}
 
-        {/* Air Quality Sensor Cluster Metrics */}
         {selected.kind === "air" && (
           <section className="inspector-section">
             <h3 className="section-label">실시간 대기질 · 환경 센서 집계</h3>
+            <Pm25SpectrumBar pm25={selected.data.pm25} />
             <div className="metric-grid">
-              <div className="metric-cell">
-                <span className="metric-k">초미세먼지 PM2.5</span>
-                <strong className="metric-v mono" style={{ color: getPm25Level(selected.data.pm25).color }}>
-                  {selected.data.pm25.toFixed(1)} µg/m³
-                </strong>
-              </div>
               <div className="metric-cell">
                 <span className="metric-k">미세먼지 PM10</span>
                 <strong className="metric-v mono">
                   {selected.data.pm10 !== null ? `${selected.data.pm10.toFixed(1)} µg/m³` : "—"}
                 </strong>
+              </div>
+              <div className="metric-cell">
+                <span className="metric-k">센서 수 / 제공</span>
+                <strong className="metric-v mono">{selected.data.sensorCount}개 활성</strong>
               </div>
               <div className="metric-cell">
                 <span className="metric-k">센서 기온 / 습도</span>
@@ -346,13 +485,17 @@ export default function InspectorPanel({
           </section>
         )}
 
-        {/* Live Atmospheric Weather Telemetry (Open-Meteo) */}
         <section className="inspector-section">
           <h3 className="section-label">
             기상 모델 텔레메트리 {loading && <span className="loading-dot">수신 중...</span>}
           </h3>
           {inspect?.weather ? (
             <>
+              <WindCompassDial
+                deg={inspect.weather.windDirDeg}
+                speedKmh={inspect.weather.windSpeedKmh}
+                label={`풍향 (돌풍 ${inspect.weather.windGustKmh} km/h)`}
+              />
               <div className="metric-grid">
                 <div className="metric-cell">
                   <span className="metric-k">
@@ -365,82 +508,103 @@ export default function InspectorPanel({
                 </div>
                 <div className="metric-cell">
                   <span className="metric-k">
-                    <Wind size={12} /> 풍향 · 풍속
+                    <CloudRain size={12} /> 강수 · 날씨
                   </span>
                   <strong className="metric-v mono">
-                    {getCardinalDirKo(inspect.weather.windDirDeg)} {inspect.weather.windSpeedKmh} km/h
+                    {inspect.weather.precipMm.toFixed(1)} mm
                   </strong>
                 </div>
                 <div className="metric-cell">
                   <span className="metric-k">
-                    <CloudRain size={12} /> 강수량
+                    <Droplets size={12} /> 상대 습도
                   </span>
-                  <strong className="metric-v mono">{inspect.weather.precipMm.toFixed(1)} mm</strong>
+                  <strong className="metric-v mono">{inspect.weather.humidityPct}%</strong>
                 </div>
                 <div className="metric-cell">
                   <span className="metric-k">
-                    <Droplets size={12} /> 습도 · <Gauge size={12} /> 기압
+                    <Gauge size={12} /> 해면 기압
                   </span>
-                  <strong className="metric-v mono">
-                    {inspect.weather.humidityPct}% · {inspect.weather.pressureHpa} hPa
-                  </strong>
+                  <strong className="metric-v mono">{inspect.weather.pressureHpa} hPa</strong>
                 </div>
               </div>
-              <TempSparkline
-                values={inspect.weather.hourlyTempC}
+              <DualForecastChart
+                temps={inspect.weather.hourlyTempC}
+                winds={inspect.weather.hourlyWindKmh}
                 labels={inspect.weather.hourlyLabels}
               />
             </>
           ) : (
             <p className="empty-hint">
-              {loading ? "Open-Meteo 모델에서 기상 데이터를 조회하고 있습니다..." : "해당 좌표의 기상 정보를 불러오지 못했습니다."}
+              {loading
+                ? "Open-Meteo 모델에서 기상 데이터를 조회하고 있습니다..."
+                : "해당 좌표의 기상 정보를 불러오지 못했습니다."}
             </p>
           )}
         </section>
 
-        {/* Marine / Ocean Telemetry if over sea or ocean node selected */}
         {(inspect?.marine || selected.kind === "ocean") && (
           <section className="inspector-section">
             <h3 className="section-label">해양 모델 (파고 · 해류 · 너울)</h3>
+            <WindCompassDial
+              deg={
+                inspect?.marine?.waveDirDeg ??
+                (selected.kind === "ocean" ? selected.data.waveDirDeg : 0)
+              }
+              speedKmh={
+                inspect?.marine?.currentVelKmh ??
+                (selected.kind === "ocean" ? selected.data.currentVelKmh : 0)
+              }
+              label="파향 · 표층 해류"
+              accent="#2dd4bf"
+            />
             <div className="metric-grid">
               <div className="metric-cell">
                 <span className="metric-k">
                   <Waves size={12} /> 유의 파고
                 </span>
                 <strong className="metric-v mono" style={{ color: "#2dd4bf" }}>
-                  {(inspect?.marine?.waveHeightM ?? (selected.kind === "ocean" ? selected.data.waveHeightM : 0)).toFixed(2)} m
-                </strong>
-              </div>
-              <div className="metric-cell">
-                <span className="metric-k">파주기 · 파향</span>
-                <strong className="metric-v mono">
-                  {(inspect?.marine?.wavePeriodS ?? (selected.kind === "ocean" ? selected.data.wavePeriodS : 0)).toFixed(1)}s ·{" "}
-                  {getCardinalDirKo(
-                    inspect?.marine?.waveDirDeg ?? (selected.kind === "ocean" ? selected.data.waveDirDeg : 0)
-                  )}
+                  {(
+                    inspect?.marine?.waveHeightM ??
+                    (selected.kind === "ocean" ? selected.data.waveHeightM : 0)
+                  ).toFixed(2)}{" "}
+                  m
                 </strong>
               </div>
               <div className="metric-cell">
                 <span className="metric-k">
-                  <Compass size={12} /> 표층 해류
+                  <Wind size={12} /> 파주기
                 </span>
                 <strong className="metric-v mono">
-                  {inspect?.marine?.currentVelKmh ?? (selected.kind === "ocean" ? selected.data.currentVelKmh : 0)} km/h
+                  {(
+                    inspect?.marine?.wavePeriodS ??
+                    (selected.kind === "ocean" ? selected.data.wavePeriodS : 0)
+                  ).toFixed(1)}{" "}
+                  sec
                 </strong>
               </div>
               <div className="metric-cell">
-                <span className="metric-k">너울 파고</span>
+                <span className="metric-k">
+                  <Compass size={12} /> 너울 파고
+                </span>
                 <strong className="metric-v mono">
-                  {inspect?.marine?.swellHeightM !== null && inspect?.marine?.swellHeightM !== undefined
+                  {inspect?.marine?.swellHeightM !== null &&
+                  inspect?.marine?.swellHeightM !== undefined
                     ? `${inspect.marine.swellHeightM.toFixed(2)} m`
                     : "—"}
+                </strong>
+              </div>
+              <div className="metric-cell">
+                <span className="metric-k">해류 유속</span>
+                <strong className="metric-v mono">
+                  {inspect?.marine?.currentVelKmh ??
+                    (selected.kind === "ocean" ? selected.data.currentVelKmh : 0)}{" "}
+                  km/h
                 </strong>
               </div>
             </div>
           </section>
         )}
 
-        {/* Proximity Cross-Layer Telemetry */}
         <section className="inspector-section">
           <h3 className="section-label">인근 크로스 레이어 관측</h3>
           <div className="nearby-stack">
@@ -448,15 +612,20 @@ export default function InspectorPanel({
               <div className="nearby-row">
                 <span className="nearby-k">최근접 지진</span>
                 <span className="nearby-v mono">
-                  M{nearby.quake.mag.toFixed(1)} · {Math.round(nearby.quake.distanceKm).toLocaleString()} km
+                  M{nearby.quake.mag.toFixed(1)} ·{" "}
+                  {Math.round(nearby.quake.distanceKm).toLocaleString()} km
                 </span>
               </div>
             )}
             {nearby.sensor && selected.kind !== "air" && (
               <div className="nearby-row">
                 <span className="nearby-k">최근접 환경 센서</span>
-                <span className="nearby-v mono" style={{ color: getPm25Level(nearby.sensor.pm25).color }}>
-                  PM2.5 {nearby.sensor.pm25.toFixed(1)} · {Math.round(nearby.sensor.distanceKm).toLocaleString()} km
+                <span
+                  className="nearby-v mono"
+                  style={{ color: getPm25Level(nearby.sensor.pm25).color }}
+                >
+                  PM2.5 {nearby.sensor.pm25.toFixed(1)} ·{" "}
+                  {Math.round(nearby.sensor.distanceKm).toLocaleString()} km
                 </span>
               </div>
             )}

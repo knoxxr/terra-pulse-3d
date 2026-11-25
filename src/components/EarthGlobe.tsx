@@ -730,13 +730,18 @@ export default function EarthGlobe({
       } else if (picked.kind === "air") {
         const a = picked.data;
         const lvl = getPm25Level(a.pm25);
+        const isKorea = a.country === "KR" && Boolean(a.stationName);
         setTooltip({
           x: tx,
           y: ty,
           badge: `PM2.5 ${a.pm25.toFixed(1)}`,
           badgeColor: lvl.color,
-          title: `${a.country} 센서 클러스터 (${a.sensorCount}개)`,
-          subtitle: `대기질 ${lvl.label}${a.pm10 !== null ? ` · PM10 ${a.pm10}` : ""}`,
+          title: isKorea
+            ? `${a.stationName} (${a.provider})`
+            : `${a.country} 센서 클러스터 (${a.sensorCount}개)`,
+          subtitle: isKorea
+            ? `대기질 ${lvl.label}${a.khaiValue ? ` · KHAI ${a.khaiValue}` : ""}${a.pm10 !== null ? ` · PM10 ${a.pm10}` : ""}`
+            : `대기질 ${lvl.label}${a.pm10 !== null ? ` · PM10 ${a.pm10}` : ""}`,
         });
       }
     };

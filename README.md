@@ -34,8 +34,17 @@ npm install
 npm run dev
 ```
 
+### 한국 대기질 공식 연동 (공공데이터포털 data.go.kr · 에어코리아)
+
+1. [공공데이터포털 (data.go.kr)](https://www.data.go.kr)에서 **한국환경공단_에어코리아_대기오염정보** 오픈 API 활용 신청 (자동 승인).
+   - 선택 사항: **한국환경공단_에어코리아_측정소정보**도 함께 신청하면 전국 640+ 측정소의 정확한 WGS84 좌표를 24시간 캐시로 자동 조회합니다(미신청 시에도 내장 전국 시·군·구 좌표 아틀라스로 정상 매핑).
+2. Vercel 프로젝트 → **Settings → Environment Variables**에 아래 변수 추가 후 재배포:
+   - `DATA_GO_KR_API_KEY`: 발급받은 일반 인증키 (**Encoding / Decoding 키 모두 자동 인식**)
+3. **일일 트래픽 보호 설계**: `sidoName=전국` 단일 호출 + 15분 Edge CDN 캐시(`s-maxage=900`) + Singleflight 요청 병합으로 대규모 동시 접속 시에도 하루 최대 96회 이하로 호출되어 개발계정 무료 한도(일 500회) 내에서 안전하게 운영됩니다.
+4. `DATA_GO_KR_API_KEY` 미설정 시에는 Open-Meteo CAMS 한국 35개 주요 도시 실시간 대기질로 자동 대체됩니다.
+
 ### Vercel 원클릭 배포
 
 - 별도 API 키 없이 **즉시 배포 및 실시간 동작**합니다.
-- 선택적으로 Vercel Environment Variables에 `PURPLEAIR_API_KEY`를 추가하면 북미/글로벌 PurpleAir 센서 데이터가 자동 병합됩니다.
+- 선택적으로 `DATA_GO_KR_API_KEY`(에어코리아) 또는 `PURPLEAIR_API_KEY`를 Vercel 환경 변수에 추가하면 자동 병합됩니다.
 - `vercel.json`에 리전(`icn1`) 및 서버리스 함수 타임아웃이 Hobby·Pro 플랜 모두 호환되도록 사전 구성되어 있습니다.

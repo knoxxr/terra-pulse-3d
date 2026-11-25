@@ -1,12 +1,8 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { Activity, Radio, Waves, X } from "lucide-react";
-import {
-  getMagnitudeColor,
-  getPm25Level,
-  timeAgoKo,
-} from "@/lib/geo";
+import { Activity, MapPin, Radio, Waves, X } from "lucide-react";
+import { getMagnitudeColor, getPm25Level, timeAgoKo } from "@/lib/geo";
 import type {
   AirQualityCluster,
   EarthquakeEvent,
@@ -23,7 +19,7 @@ interface EventFeedDrawerProps {
   onSelect: (item: SelectedItem, altitude?: number) => void;
 }
 
-type FeedTab = "quakes" | "air" | "ocean";
+type FeedTab = "quakes" | "korea" | "air" | "ocean";
 
 export default function EventFeedDrawer({
   open,
@@ -33,30 +29,39 @@ export default function EventFeedDrawer({
   onClose,
   onSelect,
 }: EventFeedDrawerProps) {
-  const [tab, setTab] = useState<FeedTab>("quakes");
+  const [tab, setTab] = useState<FeedTab>("korea");
 
   const topQuakes = useMemo(
-    () => [...earthquakes].sort((a, b) => b.mag - a.mag || b.time - a.time).slice(0, 15),
+    () => [...earthquakes].sort((a, b) => b.mag - a.mag || b.time - a.time).slice(0, 18),
     [earthquakes]
   );
 
+  const koreaAir = useMemo(
+    () =>
+      airQuality
+        .filter((a) => a.country === "KR")
+        .sort((a, b) => b.pm25 - a.pm25)
+        .slice(0, 35),
+    [airQuality]
+  );
+
   const topAir = useMemo(
-    () => [...airQuality].sort((a, b) => b.pm25 - a.pm25).slice(0, 15),
+    () => [...airQuality].sort((a, b) => b.pm25 - a.pm25).slice(0, 18),
     [airQuality]
   );
 
   const topOcean = useMemo(
-    () => [...ocean].sort((a, b) => b.waveHeightM - a.waveHeightM).slice(0, 15),
+    () => [...ocean].sort((a, b) => b.waveHeightM - a.waveHeightM).slice(0, 18),
     [ocean]
   );
 
   if (!open) return null;
 
   return (
-    <aside className="feed-drawer" aria-label="실시간 주요 글로벌 이벤트 목록">
+    <aside className="feed-drawer" aria-label="실시간 주요 글로벌 및 한국 이벤트 목록">
       <div className="drawer-header">
         <div>
-          <h2 className="drawer-title">실시간 글로벌 하이라이트</h2>
+          <h2 className="drawer-title">실시간 글로벌 · 한국 하이라이트</h2>
           <p className="drawer-sub">항목을 선택하면 해당 위치로 지구본이 이동합니다</p>
         </div>
         <button type="button" className="close-btn" onClick={onClose} aria-label="닫기">
@@ -68,12 +73,22 @@ export default function EventFeedDrawer({
         <button
           type="button"
           role="tab"
+          aria-selected={tab === "korea"}
+          className={`feed-tab ${tab === "korea" ? "is-active" : ""}`}
+          onClick={() => setTab("korea")}
+        >
+          <MapPin size={13} />
+          <span>한국 대기</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
           aria-selected={tab === "quakes"}
           className={`feed-tab ${tab === "quakes" ? "is-active" : ""}`}
           onClick={() => setTab("quakes")}
         >
-          <Activity size={14} />
-          <span>주요 지진</span>
+          <Activity size={13} />
+          <span>지진</span>
         </button>
         <button
           type="button"
@@ -82,8 +97,8 @@ export default function EventFeedDrawer({
           className={`feed-tab ${tab === "air" ? "is-active" : ""}`}
           onClick={() => setTab("air")}
         >
-          <Radio size={14} />
-          <span>고농도 PM2.5</span>
+          <Radio size={13} />
+          <span>글로벌 PM</span>
         </button>
         <button
           type="button"
@@ -92,19 +107,61 @@ export default function EventFeedDrawer({
           className={`feed-tab ${tab === "ocean" ? "is-active" : ""}`}
           onClick={() => setTab("ocean")}
         >
-          <Waves size={14} />
-          <span>높은 파고</span>
+          <Waves size={13} />
+          <span>파고</span>
         </button>
       </div>
 
       <div className="feed-list">
+        {tab === "korea" &&
+          koreaAir.map((a) => {
+            const lvl = getPm25Level(a.pm25);
+            return (
+              <button
+                key={a.id}
+                type="button"
+                className="feed-item"
+                onClick={() => onSelect({ kind: "air", data: a }, 1.32)}
+              >
+                <span
+                  className="feed-badge mono"
+                  style={{ color: lvl.color, backgroundColor: lvl.bg }}
+                >
+                  {a.pm25.toFixed(0)}
+                </span>
+                <div className="feed-item-body">
+                  <div className="feed-item-title">
+                    {a.stationName ?? `${a.sidoName ?? "한국"} 측정소`}
+                  </div>
+                  <div className="feed-item-meta">
+                    <span style={{ color: lvl.color }}>{lvl.label}</span>
+                    <span>·</span>
+                    <span>PM2.5 {a.pm25.toFixed(1)}</span>
+                    {a.pm10 !== null && (
+                      <>
+                        <span>·</span>
+                        <span>PM10 {a.pm10.toFixed(0)}</span>
+                      </>
+                    )}
+                    {a.khaiValue != null && (
+                      <>
+                        <span>·</span>
+                        <span>KHAI {a.khaiValue}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+
         {tab === "quakes" &&
           topQuakes.map((q) => (
             <button
               key={q.id}
               type="button"
               className="feed-item"
-              onClick={() => onSelect({ kind: "earthquake", data: q }, 2.05)}
+              onClick={() => onSelect({ kind: "earthquake", data: q }, 1.72)}
             >
               <span
                 className="feed-badge mono"
@@ -135,7 +192,7 @@ export default function EventFeedDrawer({
                 key={a.id}
                 type="button"
                 className="feed-item"
-                onClick={() => onSelect({ kind: "air", data: a }, 1.95)}
+                onClick={() => onSelect({ kind: "air", data: a }, 1.65)}
               >
                 <span
                   className="feed-badge mono"
@@ -145,12 +202,12 @@ export default function EventFeedDrawer({
                 </span>
                 <div className="feed-item-body">
                   <div className="feed-item-title">
-                    {a.country} 권역 · PM2.5 {a.pm25.toFixed(1)} µg/m³
+                    {a.stationName ?? `${a.country} 권역`} · PM2.5 {a.pm25.toFixed(1)} µg/m³
                   </div>
                   <div className="feed-item-meta">
                     <span style={{ color: lvl.color }}>{lvl.label}</span>
                     <span>·</span>
-                    <span>센서 {a.sensorCount}개 집계</span>
+                    <span>{a.provider}</span>
                     {a.pm10 !== null && (
                       <>
                         <span>·</span>
@@ -169,7 +226,7 @@ export default function EventFeedDrawer({
               key={o.id}
               type="button"
               className="feed-item"
-              onClick={() => onSelect({ kind: "ocean", data: o }, 2.25)}
+              onClick={() => onSelect({ kind: "ocean", data: o }, 1.95)}
             >
               <span
                 className="feed-badge mono"

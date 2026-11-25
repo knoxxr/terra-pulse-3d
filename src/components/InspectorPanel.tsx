@@ -375,18 +375,26 @@ export default function InspectorPanel({
     if (selected.kind === "air") {
       const a = selected.data;
       const lvl = getPm25Level(a.pm25);
+      const isKorea = a.country === "KR" && Boolean(a.stationName);
       return (
         <div className="inspector-hero">
           <div className="hero-badge-row">
             <span className="hero-pill mono" style={{ color: lvl.color, background: lvl.bg }}>
               PM2.5 {a.pm25.toFixed(1)} µg/m³ · {lvl.label}
             </span>
+            {a.khaiValue != null && (
+              <span className="hero-tag mono">통합지수 KHAI {a.khaiValue}</span>
+            )}
             <span className="hero-tag">{a.provider}</span>
           </div>
           <h2 className="inspector-title">
-            {a.country} 환경 센서 클러스터 ({a.sensorCount}개)
+            {isKorea
+              ? `${a.stationName}${a.mangName ? ` · ${a.mangName}` : ""}`
+              : `${a.country} 환경 센서 클러스터 (${a.sensorCount}개)`}
           </h2>
-          <p className="inspector-coord mono">{formatCoord(a.lat, a.lng)}</p>
+          <p className="inspector-coord mono">
+            {formatCoord(a.lat, a.lng)} · {a.timestamp}
+          </p>
         </div>
       );
     }
@@ -455,7 +463,11 @@ export default function InspectorPanel({
 
         {selected.kind === "air" && (
           <section className="inspector-section">
-            <h3 className="section-label">실시간 대기질 · 환경 센서 집계</h3>
+            <h3 className="section-label">
+              {selected.data.country === "KR"
+                ? `한국 대기질 상세 (${selected.data.provider})`
+                : "실시간 대기질 · 환경 센서 집계"}
+            </h3>
             <Pm25SpectrumBar pm25={selected.data.pm25} />
             <div className="metric-grid">
               <div className="metric-cell">
@@ -465,22 +477,59 @@ export default function InspectorPanel({
                 </strong>
               </div>
               <div className="metric-cell">
-                <span className="metric-k">센서 수 / 제공</span>
-                <strong className="metric-v mono">{selected.data.sensorCount}개 활성</strong>
-              </div>
-              <div className="metric-cell">
-                <span className="metric-k">센서 기온 / 습도</span>
+                <span className="metric-k">
+                  {selected.data.khaiValue != null ? "통합대기지수 (KHAI)" : "센서 수 / 제공"}
+                </span>
                 <strong className="metric-v mono">
-                  {selected.data.tempC !== null ? `${selected.data.tempC.toFixed(1)}°C` : "—"} /{" "}
-                  {selected.data.humidityPct !== null ? `${selected.data.humidityPct}%` : "—"}
+                  {selected.data.khaiValue != null
+                    ? `${selected.data.khaiValue} (${selected.data.sensorCount}개소)`
+                    : `${selected.data.sensorCount}개 활성`}
                 </strong>
               </div>
-              <div className="metric-cell">
-                <span className="metric-k">대기압</span>
-                <strong className="metric-v mono">
-                  {selected.data.pressureHpa !== null ? `${selected.data.pressureHpa} hPa` : "—"}
-                </strong>
-              </div>
+              {selected.data.o3Ppm != null || selected.data.no2Ppm != null ? (
+                <>
+                  <div className="metric-cell">
+                    <span className="metric-k">오존 (O₃)</span>
+                    <strong className="metric-v mono">
+                      {selected.data.o3Ppm != null ? `${selected.data.o3Ppm.toFixed(3)} ppm` : "—"}
+                    </strong>
+                  </div>
+                  <div className="metric-cell">
+                    <span className="metric-k">이산화질소 (NO₂)</span>
+                    <strong className="metric-v mono">
+                      {selected.data.no2Ppm != null ? `${selected.data.no2Ppm.toFixed(3)} ppm` : "—"}
+                    </strong>
+                  </div>
+                  <div className="metric-cell">
+                    <span className="metric-k">일산화탄소 (CO)</span>
+                    <strong className="metric-v mono">
+                      {selected.data.coPpm != null ? `${selected.data.coPpm.toFixed(2)} ppm` : "—"}
+                    </strong>
+                  </div>
+                  <div className="metric-cell">
+                    <span className="metric-k">아황산가스 (SO₂)</span>
+                    <strong className="metric-v mono">
+                      {selected.data.so2Ppm != null ? `${selected.data.so2Ppm.toFixed(3)} ppm` : "—"}
+                    </strong>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="metric-cell">
+                    <span className="metric-k">센서 기온 / 습도</span>
+                    <strong className="metric-v mono">
+                      {selected.data.tempC !== null ? `${selected.data.tempC.toFixed(1)}°C` : "—"} /{" "}
+                      {selected.data.humidityPct !== null ? `${selected.data.humidityPct}%` : "—"}
+                    </strong>
+                  </div>
+                  <div className="metric-cell">
+                    <span className="metric-k">대기압</span>
+                    <strong className="metric-v mono">
+                      {selected.data.pressureHpa !== null ? `${selected.data.pressureHpa} hPa` : "—"}
+                    </strong>
+                  </div>
+                </>
+              )}
             </div>
           </section>
         )}

@@ -758,23 +758,25 @@ button {
 
 .feed-tabs {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-  padding: 0 14px 12px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+  padding: 0 12px 12px;
 }
 
 .feed-tab {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 4px;
   height: 34px;
+  padding: 0 4px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-hairline);
   background: var(--surface-elevated);
   color: var(--text-secondary);
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .feed-tab.is-active {

@@ -77,6 +77,8 @@ export default function TerraPulseApp() {
     dustSensorCount: 0,
     climateSensorCount: 0,
     globalAvgPm25: 0,
+    koreaStationCount: 0,
+    koreaSource: "none",
   });
 
   const [quakeMeta, setQuakeMeta] = useState<FeedMeta>(DEFAULT_META);
@@ -242,14 +244,26 @@ export default function TerraPulseApp() {
     return "fallback";
   }, [quakeMeta.status, weatherMeta.status, airMeta.status]);
 
-  const archFeeds = useMemo(
-    () => [
+  const archFeeds = useMemo(() => {
+    const krClusterCount = airQuality.clusters.filter((c) => c.country === "KR").length;
+    return [
       { name: "지진 · 자연재해", ...quakeMeta },
       { name: "기상 · 해양 모델", ...weatherMeta },
+      {
+        name: "한국 대기질 (data.go.kr)",
+        source:
+          airQuality.koreaSource === "data.go.kr"
+            ? "한국환경공단 에어코리아 공식 측정망"
+            : "Open-Meteo CAMS 대체 (DATA_GO_KR_API_KEY 설정 시 자동 전환)",
+        status: airMeta.status,
+        updatedAt: airMeta.updatedAt,
+        ttlSeconds: airQuality.koreaSource === "data.go.kr" ? 900 : 600,
+        rawCount: airQuality.koreaStationCount,
+        returnedCount: krClusterCount,
+      },
       { name: "글로벌 환경 센서망", ...airMeta },
-    ],
-    [quakeMeta, weatherMeta, airMeta]
-  );
+    ];
+  }, [quakeMeta, weatherMeta, airMeta, airQuality]);
 
   return (
     <main className="app-shell">

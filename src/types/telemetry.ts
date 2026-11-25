@@ -65,6 +65,12 @@ export interface WeatherOceanPayload {
   modelInfo: string;
 }
 
+export type AirQualityProvider =
+  | "AirKorea (data.go.kr)"
+  | "Open-Meteo CAMS (KR)"
+  | "Sensor.Community"
+  | "PurpleAir";
+
 export interface AirQualityCluster {
   id: string;
   lat: number;
@@ -76,8 +82,18 @@ export interface AirQualityCluster {
   pressureHpa: number | null;
   sensorCount: number;
   country: string;
-  provider: "Sensor.Community" | "PurpleAir";
+  provider: AirQualityProvider;
   timestamp: string;
+  // Official AirKorea (data.go.kr) & 6-pollutant telemetry fields
+  stationName?: string;
+  sidoName?: string;
+  mangName?: string | null;
+  khaiValue?: number | null;
+  khaiGrade?: number | null; // 1: 좋음, 2: 보통, 3: 나쁨, 4: 매우나쁨
+  o3Ppm?: number | null;
+  no2Ppm?: number | null;
+  coPpm?: number | null;
+  so2Ppm?: number | null;
 }
 
 export interface AirQualityPayload {
@@ -86,6 +102,8 @@ export interface AirQualityPayload {
   dustSensorCount: number;
   climateSensorCount: number;
   globalAvgPm25: number;
+  koreaStationCount: number;
+  koreaSource: "data.go.kr" | "open-meteo-cams" | "none";
 }
 
 export interface PointInspectData {

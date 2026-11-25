@@ -170,5 +170,7 @@ export function getFallbackAirQuality(): AirQualityPayload {
     dustSensorCount: 9120,
     climateSensorCount: 6120,
     globalAvgPm25: 19.4,
+    koreaStationCount: 0,
+    koreaSource: "none",
   };
 }

@@ -11,6 +11,9 @@ export async function GET() {
       feeds: {
         earthquakes: "USGS GeoJSON (60s CDN)",
         weatherOcean: "Open-Meteo NOAA GFS / ECMWF Marine (600s CDN)",
+        koreaAirQuality: process.env.DATA_GO_KR_API_KEY
+          ? "한국환경공단 에어코리아 data.go.kr (900s CDN)"
+          : "Open-Meteo CAMS Korea (DATA_GO_KR_API_KEY 미설정 대체, 600s CDN)",
         airQuality: process.env.PURPLEAIR_API_KEY
           ? "Sensor.Community + PurpleAir (300s CDN)"
           : "Sensor.Community Global Network (300s CDN)",

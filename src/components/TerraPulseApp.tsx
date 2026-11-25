@@ -1,0 +1,291 @@
+"use client";
+
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import TopBar from "./TopBar";
+import LayerDock from "./LayerDock";
+import EventFeedDrawer from "./EventFeedDrawer";
+import InspectorPanel from "./InspectorPanel";
+import ArchitectureModal from "./ArchitectureModal";
+import type {
+  AirQualityPayload,
+  ApiEnvelope,
+  DataSourceStatus,
+  EarthquakeEvent,
+  LayerVisibility,
+  QuakeWindow,
+  SelectedItem,
+  WeatherOceanPayload,
+} from "@/types/telemetry";
+
+// Dynamic import keeps WebGL Three.js completely client-side (zero SSR overhead on Vercel!)
+const EarthGlobe = dynamic(() => import("./EarthGlobe"), {
+  ssr: false,
+  loading: () => (
+    <div className="globe-loading">
+      <div className="globe-spinner" />
+      <p>3D 지구본 텔레메트리 엔진 초기화 중...</p>
+    </div>
+  ),
+});
+
+interface FeedMeta {
+  source: string;
+  status: DataSourceStatus;
+  updatedAt: string;
+  ttlSeconds: number;
+  rawCount: number;
+  returnedCount: number;
+}
+
+const DEFAULT_META: FeedMeta = {
+  source: "수신 대기 중",
+  status: "cached",
+  updatedAt: new Date().toISOString(),
+  ttlSeconds: 60,
+  rawCount: 0,
+  returnedCount: 0,
+};
+
+export default function TerraPulseApp() {
+  const [layers, setLayers] = useState<LayerVisibility>({
+    earthquakes: true,
+    weather: true,
+    ocean: true,
+    airQuality: true,
+    dayNight: true,
+    autoRotate: false,
+  });
+
+  const [quakeWindow, setQuakeWindow] = useState<QuakeWindow>("day");
+  const [minMag, setMinMag] = useState<number>(2.5);
+
+  const [earthquakes, setEarthquakes] = useState<EarthquakeEvent[]>([]);
+  const [weatherOcean, setWeatherOcean] = useState<WeatherOceanPayload>({
+    weather: [],
+    ocean: [],
+    modelInfo: "Open-Meteo",
+  });
+  const [airQuality, setAirQuality] = useState<AirQualityPayload>({
+    clusters: [],
+    totalRawSensors: 0,
+    dustSensorCount: 0,
+    climateSensorCount: 0,
+    globalAvgPm25: 0,
+  });
+
+  const [quakeMeta, setQuakeMeta] = useState<FeedMeta>(DEFAULT_META);
+  const [weatherMeta, setWeatherMeta] = useState<FeedMeta>(DEFAULT_META);
+  const [airMeta, setAirMeta] = useState<FeedMeta>(DEFAULT_META);
+
+  const [selected, setSelected] = useState<SelectedItem | null>(null);
+  const [flyToTarget, setFlyToTarget] = useState<{
+    lat: number;
+    lng: number;
+    altitude?: number;
+    nonce: number;
+  } | null>(null);
+  const [feedOpen, setFeedOpen] = useState(false);
+  const [archOpen, setArchOpen] = useState(false);
+  const [hintDismissed, setHintDismissed] = useState(false);
+
+  const nonceRef = useRef(1);
+
+  const triggerFlyTo = useCallback((lat: number, lng: number, altitude?: number) => {
+    nonceRef.current += 1;
+    setFlyToTarget({ lat, lng, altitude, nonce: nonceRef.current });
+  }, []);
+
+  // Initial parallel load & visibility-aware polling (reduces background traffic for scale)
+  useEffect(() => {
+    let active = true;
+    const fetchQuakes = async () => {
+      try {
+        const res = await fetch(`/api/earthquakes?window=${quakeWindow}&minMag=${minMag}`);
+        if (!res.ok) return;
+        const json = (await res.json()) as ApiEnvelope<EarthquakeEvent[]>;
+        if (!active) return;
+        setEarthquakes(json.data);
+        setQuakeMeta(json.meta);
+      } catch {
+        // Keep previous data silently on transient network blip
+      }
+    };
+    void fetchQuakes();
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") void fetchQuakes();
+    }, 60_000);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, [quakeWindow, minMag]);
+
+  useEffect(() => {
+    let active = true;
+    const fetchWeatherOcean = async () => {
+      try {
+        const res = await fetch("/api/weather-ocean");
+        if (!res.ok) return;
+        const json = (await res.json()) as ApiEnvelope<WeatherOceanPayload>;
+        if (!active) return;
+        setWeatherOcean(json.data);
+        setWeatherMeta(json.meta);
+      } catch {
+        // Keep previous data
+      }
+    };
+    void fetchWeatherOcean();
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") void fetchWeatherOcean();
+    }, 300_000);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const fetchAirQuality = async () => {
+      try {
+        const res = await fetch("/api/air-quality");
+        if (!res.ok) return;
+        const json = (await res.json()) as ApiEnvelope<AirQualityPayload>;
+        if (!active) return;
+        setAirQuality(json.data);
+        setAirMeta(json.meta);
+      } catch {
+        // Keep previous data
+      }
+    };
+    void fetchAirQuality();
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") void fetchAirQuality();
+    }, 300_000);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, []);
+
+  const handleToggleLayer = useCallback((key: keyof LayerVisibility) => {
+    setLayers((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
+  const handleSelectItem = useCallback(
+    (item: SelectedItem, altitude?: number) => {
+      setSelected(item);
+      setHintDismissed(true);
+      const lat = item.kind === "point" ? item.lat : item.data.lat;
+      const lng = item.kind === "point" ? item.lng : item.data.lng;
+      triggerFlyTo(lat, lng, altitude);
+      // On small screens, close event feed when opening inspector so view stays uncluttered
+      if (typeof window !== "undefined" && window.innerWidth < 900) {
+        setFeedOpen(false);
+      }
+    },
+    [triggerFlyTo]
+  );
+
+  const handleSearchLocation = useCallback(
+    (lat: number, lng: number, label: string, altitude?: number) => {
+      setSelected({ kind: "point", lat, lng, label });
+      setHintDismissed(true);
+      triggerFlyTo(lat, lng, altitude ?? 2.1);
+    },
+    [triggerFlyTo]
+  );
+
+  const overallStatus = useMemo<DataSourceStatus>(() => {
+    const statuses = [quakeMeta.status, weatherMeta.status, airMeta.status];
+    if (statuses.includes("live")) return "live";
+    if (statuses.includes("cached")) return "cached";
+    if (statuses.includes("stale")) return "stale";
+    return "fallback";
+  }, [quakeMeta.status, weatherMeta.status, airMeta.status]);
+
+  const archFeeds = useMemo(
+    () => [
+      { name: "지진 · 자연재해", ...quakeMeta },
+      { name: "기상 · 해양 모델", ...weatherMeta },
+      { name: "글로벌 환경 센서망", ...airMeta },
+    ],
+    [quakeMeta, weatherMeta, airMeta]
+  );
+
+  return (
+    <main className="app-shell">
+      <EarthGlobe
+        earthquakes={earthquakes}
+        weather={weatherOcean.weather}
+        ocean={weatherOcean.ocean}
+        airQuality={airQuality.clusters}
+        layers={layers}
+        selected={selected}
+        flyToTarget={flyToTarget}
+        onSelect={handleSelectItem}
+      />
+
+      <TopBar
+        totalEarthquakes={earthquakes.length}
+        totalRawSensors={airQuality.totalRawSensors}
+        overallStatus={overallStatus}
+        feedOpen={feedOpen}
+        onToggleFeed={() => setFeedOpen((v) => !v)}
+        onOpenArchitecture={() => setArchOpen(true)}
+        onSelectLocation={handleSearchLocation}
+      />
+
+      {!hintDismissed && !selected && !feedOpen && (
+        <div className="onboarding-hint" role="status">
+          <span>지구본을 드래그해 회전하고, 마커나 원하는 지점을 탭해 실시간 기상·해양·대기질을 확인하세요</span>
+          <button
+            type="button"
+            className="hint-dismiss"
+            onClick={() => setHintDismissed(true)}
+            aria-label="안내 닫기"
+          >
+            확인
+          </button>
+        </div>
+      )}
+
+      <EventFeedDrawer
+        open={feedOpen}
+        earthquakes={earthquakes}
+        ocean={weatherOcean.ocean}
+        airQuality={airQuality.clusters}
+        onClose={() => setFeedOpen(false)}
+        onSelect={handleSelectItem}
+      />
+
+      <InspectorPanel
+        selected={selected}
+        earthquakes={earthquakes}
+        airQuality={airQuality.clusters}
+        onClose={() => setSelected(null)}
+      />
+
+      <LayerDock
+        layers={layers}
+        quakeWindow={quakeWindow}
+        minMag={minMag}
+        quakeCount={earthquakes.length}
+        weatherCount={weatherOcean.weather.length}
+        oceanCount={weatherOcean.ocean.length}
+        airClusterCount={airQuality.clusters.length}
+        onToggleLayer={handleToggleLayer}
+        onChangeQuakeWindow={setQuakeWindow}
+        onChangeMinMag={setMinMag}
+        onQuickJump={handleSearchLocation}
+      />
+
+      <ArchitectureModal
+        open={archOpen}
+        feeds={archFeeds}
+        onClose={() => setArchOpen(false)}
+      />
+    </main>
+  );
+}

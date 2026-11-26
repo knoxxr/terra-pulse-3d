@@ -22,9 +22,18 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TerraPulse 3D — 글로벌 실시간 지진 · 기상 · 해양 · 환경 센서 지구본",
+  title: "TerraPulse 3D — 글로벌 실시간 지진 · 재해 · 기상 · 해양 · 대기질 3D 지구본",
   description:
-    "USGS 실시간 지진, Open-Meteo(NOAA GFS/ECMWF) 글로벌 기상·해양 파고 모델, Sensor.Community 15,000+ 환경 센서 초미세먼지 데이터를 3D 지구본 위에 실시간으로 시각화합니다.",
+    "USGS 실시간 지진, NASA EONET 산불·화산·태풍, Open-Meteo(NOAA GFS/ECMWF) 글로벌 기상·해양 모델, 한국 에어코리아(data.go.kr) 및 Sensor.Community 17,000+ 환경 센서를 3D 지구본에 실시간 시각화합니다.",
+  icons: {
+    icon: "/icon.svg",
+    apple: "/icon.svg",
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "TerraPulse 3D",
+  },
 };
 
 export const viewport: Viewport = {

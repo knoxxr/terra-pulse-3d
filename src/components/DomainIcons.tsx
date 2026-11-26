@@ -336,3 +336,49 @@ export function getWeatherGlyph(code: number, isDay = true): string {
   if (code >= 1 && code <= 3) return "⛅";
   return isDay ? "☀" : "☾";
 }
+
+/** Flame / Volcano natural hazard icon for NASA EONET layer */
+export function DisasterHazardIcon({ size = 18, className, color }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color ?? "currentColor"}
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path
+        d="M12.2 2.8c.4 2.7-1.6 4.4-2.8 5.9-1.5 1.8-2.4 3.5-2.4 5.7a5 5 0 0 0 10 0c0-2.7-1.6-4.7-2.6-6.2-.5 1.3-1.4 2-2.2 2.2.7-2.1 1-4.8 0-7.6Z"
+        fill="currentColor"
+        fillOpacity="0.18"
+      />
+    </svg>
+  );
+}
+
+/** Tectonic plate fault lines icon */
+export function TectonicIcon({ size = 16, className, color }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color ?? "currentColor"}
+      strokeWidth="1.85"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M3 16l5-4 4 3 5-6 4 2" />
+      <path d="M4 9l4 1.5M14 17l3.5 2" opacity="0.65" />
+    </svg>
+  );
+}
+

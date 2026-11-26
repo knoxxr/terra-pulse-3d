@@ -10,12 +10,14 @@ import {
   Droplets,
   Gauge,
   MapPin,
+  Star,
   Thermometer,
   Wind,
   X,
 } from "lucide-react";
 import {
   AqiGradeIcon,
+  DisasterHazardIcon,
   OceanWaveIcon,
   QuakeIcon,
   WeatherConditionIcon,
@@ -41,6 +43,8 @@ interface InspectorPanelProps {
   selected: SelectedItem | null;
   earthquakes: EarthquakeEvent[];
   airQuality: AirQualityCluster[];
+  isPinned: boolean;
+  onTogglePin: (label: string, lat: number, lng: number) => void;
   onClose: () => void;
 }
 
@@ -247,6 +251,8 @@ export default function InspectorPanel({
   selected,
   earthquakes,
   airQuality,
+  isPinned,
+  onTogglePin,
   onClose,
 }: InspectorPanelProps) {
   const [inspectState, setInspectState] = useState<{
@@ -311,6 +317,19 @@ export default function InspectorPanel({
 
   if (!selected || !coords) return null;
 
+  const pinLabel =
+    selected.kind === "weather"
+      ? selected.data.nameKo
+      : selected.kind === "ocean"
+        ? selected.data.nameKo
+        : selected.kind === "air"
+          ? selected.data.stationName ?? `${selected.data.country} 권역`
+          : selected.kind === "earthquake"
+            ? selected.data.place
+            : selected.kind === "disaster"
+              ? selected.data.title
+              : selected.label ?? formatCoord(selected.lat, selected.lng);
+
   const renderPrimaryHeader = () => {
     if (selected.kind === "earthquake") {
       const q = selected.data;
@@ -327,6 +346,30 @@ export default function InspectorPanel({
           <h2 className="inspector-title">{q.place}</h2>
           <p className="inspector-coord mono">
             {formatCoord(q.lat, q.lng)} · {formatKstTime(q.time)}
+          </p>
+        </div>
+      );
+    }
+
+    if (selected.kind === "disaster") {
+      const ev = selected.data;
+      const color =
+        ev.category === "volcanoes"
+          ? "#ef4444"
+          : ev.category === "wildfires"
+            ? "#f97316"
+            : "#38bdf8";
+      return (
+        <div className="inspector-hero">
+          <div className="hero-badge-row">
+            <span className="hero-pill" style={{ color, backgroundColor: `${color}22` }}>
+              <DisasterHazardIcon size={15} color={color} /> {ev.categoryKo}
+            </span>
+            <span className="hero-tag">{ev.provider}</span>
+          </div>
+          <h2 className="inspector-title">{ev.title}</h2>
+          <p className="inspector-coord mono">
+            {formatCoord(ev.lat, ev.lng)} · {ev.date.slice(0, 10)}
           </p>
         </div>
       );
@@ -432,13 +475,54 @@ export default function InspectorPanel({
           <span className="sheet-grabber" />
           {expandedMobile ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
         </button>
-        <button type="button" className="close-btn" onClick={onClose} aria-label="패널 닫기">
-          <X size={16} />
-        </button>
+
+        <div className="sheet-top-actions">
+          <button
+            type="button"
+            className={`pin-action-btn ${isPinned ? "is-pinned" : ""}`}
+            onClick={() => onTogglePin(pinLabel, coords.lat, coords.lng)}
+            title={isPinned ? "관심 지역 해제" : "관심 지역 즐겨찾기 저장"}
+          >
+            <Star size={14} fill={isPinned ? "#fbbf24" : "none"} />
+            <span>{isPinned ? "저장됨" : "관심 저장"}</span>
+          </button>
+          <button type="button" className="close-btn" onClick={onClose} aria-label="패널 닫기">
+            <X size={16} />
+          </button>
+        </div>
       </div>
 
       <div className="inspector-scroll">
         {renderPrimaryHeader()}
+
+        {selected.kind === "disaster" && (
+          <section className="inspector-section">
+            <h3 className="section-label">자연재해 상세 ({selected.data.provider})</h3>
+            <div className="metric-grid">
+              <div className="metric-cell">
+                <span className="metric-k">재해 유형</span>
+                <strong className="metric-v">{selected.data.categoryKo}</strong>
+              </div>
+              <div className="metric-cell">
+                <span className="metric-k">관측 규모 / 면적</span>
+                <strong className="metric-v mono">
+                  {selected.data.magnitudeValue != null
+                    ? `${selected.data.magnitudeValue.toLocaleString()} ${selected.data.magnitudeUnit ?? ""}`
+                    : "관측 진행 중"}
+                </strong>
+              </div>
+            </div>
+            <a
+              href={selected.data.sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="external-link-btn"
+            >
+              <span>NASA EONET 공식 원문 리포트 열기</span>
+              <ArrowUpRight size={14} />
+            </a>
+          </section>
+        )}
 
         {selected.kind === "earthquake" && (
           <section className="inspector-section">

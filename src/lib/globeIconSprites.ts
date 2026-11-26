@@ -1,5 +1,7 @@
 import * as THREE from "three";
 
+import type { DisasterCategory } from "@/types/telemetry";
+
 export type WeatherIconKey =
   | "sun"
   | "moon"
@@ -12,13 +14,19 @@ export type WeatherIconKey =
 export type OceanIconKey = "calm" | "mod" | "high";
 export type QuakeIconKey = "minor" | "mod" | "major" | "tsunami";
 export type AqiIconKey = "good" | "mod" | "bad" | "vbad";
+export type DisasterIconKey = "wildfires" | "volcanoes" | "severeStorms" | "seaLakeIce" | "other";
 
 export interface GlobeIconAtlas {
   weather: Record<WeatherIconKey, THREE.CanvasTexture>;
   ocean: Record<OceanIconKey, THREE.CanvasTexture>;
   quake: Record<QuakeIconKey, THREE.CanvasTexture>;
   aqi: Record<AqiIconKey, THREE.CanvasTexture>;
+  disaster: Record<DisasterIconKey, THREE.CanvasTexture>;
   dispose: () => void;
+}
+
+export function classifyDisasterIcon(cat: DisasterCategory): DisasterIconKey {
+  return cat;
 }
 
 export function classifyWeatherIcon(code: number, isDay: boolean): WeatherIconKey {
@@ -340,16 +348,107 @@ export function createGlobeIconAtlas(): GlobeIconAtlas {
     vbad: drawAqiFaceSprite("#ef4444", "vbad"),
   };
 
+  const disaster: Record<DisasterIconKey, THREE.CanvasTexture> = {
+    wildfires: makeSpriteTexture((ctx, s) => {
+      drawBadgeBg(ctx, s, "#f97316", "rgba(24, 10, 6, 0.9)");
+      ctx.fillStyle = "#f97316";
+      ctx.beginPath();
+      ctx.moveTo(64, 34);
+      ctx.bezierCurveTo(78, 52, 86, 62, 84, 76);
+      ctx.bezierCurveTo(82, 90, 72, 94, 64, 94);
+      ctx.bezierCurveTo(52, 94, 44, 86, 44, 74);
+      ctx.bezierCurveTo(44, 62, 54, 52, 56, 44);
+      ctx.bezierCurveTo(60, 50, 64, 46, 64, 34);
+      ctx.fill();
+      ctx.fillStyle = "#fde047";
+      ctx.beginPath();
+      ctx.arc(64, 78, 10, 0, Math.PI * 2);
+      ctx.fill();
+    }),
+    volcanoes: makeSpriteTexture((ctx, s) => {
+      drawBadgeBg(ctx, s, "#ef4444", "rgba(26, 8, 10, 0.9)");
+      // Ash/lava plume
+      ctx.fillStyle = "#fb923c";
+      ctx.beginPath();
+      ctx.arc(64, 46, 10, 0, Math.PI * 2);
+      ctx.arc(54, 42, 7, 0, Math.PI * 2);
+      ctx.arc(74, 42, 7, 0, Math.PI * 2);
+      ctx.fill();
+      // Volcanic cone
+      ctx.fillStyle = "#e2e8f0";
+      ctx.beginPath();
+      ctx.moveTo(56, 56);
+      ctx.lineTo(72, 56);
+      ctx.lineTo(88, 90);
+      ctx.lineTo(40, 90);
+      ctx.closePath();
+      ctx.fill();
+      // Glowing lava rim
+      ctx.strokeStyle = "#ef4444";
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.moveTo(56, 56);
+      ctx.lineTo(72, 56);
+      ctx.stroke();
+    }),
+    severeStorms: makeSpriteTexture((ctx, s) => {
+      drawBadgeBg(ctx, s, "#38bdf8", "rgba(6, 16, 28, 0.9)");
+      const c = s / 2;
+      ctx.strokeStyle = "#7dd3fc";
+      ctx.lineWidth = 6;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.arc(c, c, 12, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(c + 4, c - 4, 22, -Math.PI * 0.85, Math.PI * 0.15);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(c - 4, c + 4, 22, Math.PI * 0.15, Math.PI * 1.15);
+      ctx.stroke();
+    }),
+    seaLakeIce: makeSpriteTexture((ctx, s) => {
+      drawBadgeBg(ctx, s, "#67e8f9", "rgba(6, 18, 28, 0.9)");
+      ctx.fillStyle = "#cffafe";
+      ctx.beginPath();
+      ctx.moveTo(64, 36);
+      ctx.lineTo(84, 72);
+      ctx.lineTo(74, 88);
+      ctx.lineTo(46, 88);
+      ctx.lineTo(40, 68);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "#22d3ee";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(36, 78);
+      ctx.lineTo(92, 78);
+      ctx.stroke();
+    }),
+    other: makeSpriteTexture((ctx, s) => {
+      drawBadgeBg(ctx, s, "#f59e0b");
+      ctx.fillStyle = "#fde047";
+      ctx.beginPath();
+      ctx.moveTo(64, 38);
+      ctx.lineTo(88, 84);
+      ctx.lineTo(40, 84);
+      ctx.closePath();
+      ctx.fill();
+    }),
+  };
+
   return {
     weather,
     ocean,
     quake,
     aqi,
+    disaster,
     dispose: () => {
       Object.values(weather).forEach((t) => t.dispose());
       Object.values(ocean).forEach((t) => t.dispose());
       Object.values(quake).forEach((t) => t.dispose());
       Object.values(aqi).forEach((t) => t.dispose());
+      Object.values(disaster).forEach((t) => t.dispose());
     },
   };
 }

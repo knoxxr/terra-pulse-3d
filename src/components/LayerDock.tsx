@@ -1,28 +1,34 @@
 "use client";
 
 import React, { useState } from "react";
-import { Cloud, SlidersHorizontal } from "lucide-react";
+import { Cloud, History, SlidersHorizontal, Star } from "lucide-react";
 import {
   AirDustIcon,
   DayNightIcon,
+  DisasterHazardIcon,
   GlobeSpinIcon,
   MapLabelIcon,
   OceanWaveIcon,
   QuakeIcon,
+  TectonicIcon,
   WeatherIcon,
 } from "./DomainIcons";
 import { QUICK_JUMP_PRESETS } from "@/lib/locations";
-import type { LayerVisibility, QuakeWindow } from "@/types/telemetry";
+import type { LayerVisibility, QuakeWindow, SavedPin } from "@/types/telemetry";
 
 interface LayerDockProps {
   layers: LayerVisibility;
   quakeWindow: QuakeWindow;
   minMag: number;
   quakeCount: number;
+  disasterCount: number;
   weatherCount: number;
   oceanCount: number;
   airClusterCount: number;
+  timelineOpen: boolean;
+  savedPins: SavedPin[];
   onToggleLayer: (key: keyof LayerVisibility) => void;
+  onToggleTimeline: () => void;
   onChangeQuakeWindow: (w: QuakeWindow) => void;
   onChangeMinMag: (mag: number) => void;
   onQuickJump: (lat: number, lng: number, label: string, altitude?: number) => void;
@@ -33,10 +39,14 @@ export default function LayerDock({
   quakeWindow,
   minMag,
   quakeCount,
+  disasterCount,
   weatherCount,
   oceanCount,
   airClusterCount,
+  timelineOpen,
+  savedPins,
   onToggleLayer,
+  onToggleTimeline,
   onChangeQuakeWindow,
   onChangeMinMag,
   onQuickJump,
@@ -48,8 +58,16 @@ export default function LayerDock({
       {filterOpen && (
         <div className="dock-popover" role="region" aria-label="관측 필터 및 표시 옵션">
           <div className="popover-section">
-            <div className="popover-label">지도 그래픽 표시 옵션</div>
+            <div className="popover-label">지도 그래픽 · 지질 오버레이</div>
             <div className="segmented-row">
+              <button
+                type="button"
+                className={`seg-btn seg-btn-icon ${layers.tectonic ? "is-selected" : ""}`}
+                onClick={() => onToggleLayer("tectonic")}
+              >
+                <TectonicIcon size={14} />
+                <span>지각판</span>
+              </button>
               <button
                 type="button"
                 className={`seg-btn seg-btn-icon ${layers.clouds ? "is-selected" : ""}`}
@@ -64,7 +82,7 @@ export default function LayerDock({
                 onClick={() => onToggleLayer("labels")}
               >
                 <MapLabelIcon size={14} />
-                <span>지명·기온</span>
+                <span>지명</span>
               </button>
               <button
                 type="button"
@@ -72,7 +90,7 @@ export default function LayerDock({
                 onClick={() => onToggleLayer("dayNight")}
               >
                 <DayNightIcon size={14} active={layers.dayNight} />
-                <span>주야간 조명</span>
+                <span>주야간</span>
               </button>
             </div>
           </div>
@@ -116,6 +134,28 @@ export default function LayerDock({
               ))}
             </div>
           </div>
+
+          {savedPins.length > 0 && (
+            <div className="popover-section">
+              <div className="popover-label">내 관심 지역 즐겨찾기</div>
+              <div className="jump-chips">
+                {savedPins.map((pin) => (
+                  <button
+                    key={pin.id}
+                    type="button"
+                    className="jump-chip jump-chip-pin"
+                    onClick={() => {
+                      onQuickJump(pin.lat, pin.lng, pin.label, 1.5);
+                      setFilterOpen(false);
+                    }}
+                  >
+                    <Star size={11} fill="#fbbf24" color="#fbbf24" />
+                    <span>{pin.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="popover-section">
             <div className="popover-label">빠른 권역 이동</div>
@@ -175,6 +215,18 @@ export default function LayerDock({
         </button>
 
         <button
+          id="layer-disasters"
+          type="button"
+          className={`dock-btn ${layers.disasters ? "is-active tone-disaster" : ""}`}
+          onClick={() => onToggleLayer("disasters")}
+          aria-pressed={layers.disasters}
+        >
+          <DisasterHazardIcon size={18} />
+          <span className="dock-text">재해</span>
+          <span className="dock-count mono">{disasterCount}</span>
+        </button>
+
+        <button
           id="layer-weather"
           type="button"
           className={`dock-btn ${layers.weather ? "is-active tone-weather" : ""}`}
@@ -213,25 +265,25 @@ export default function LayerDock({
         <div className="dock-sep" aria-hidden="true" />
 
         <button
+          id="btn-toggle-timeline"
+          type="button"
+          className={`dock-icon-btn ${timelineOpen ? "is-active" : ""}`}
+          onClick={onToggleTimeline}
+          title="타임라인 재생 (지진 리플레이 · +24h 기상 예보)"
+          aria-label="타임라인 재생 열기"
+        >
+          <History size={16} />
+        </button>
+
+        <button
           id="btn-layer-filter"
           type="button"
           className={`dock-icon-btn ${filterOpen ? "is-active" : ""}`}
           onClick={() => setFilterOpen((v) => !v)}
-          title="필터 · 그래픽 옵션 · 권역 이동"
+          title="필터 · 지각판 · 즐겨찾기 · 권역 이동"
           aria-label="필터 및 표시 옵션 열기"
         >
           <SlidersHorizontal size={16} />
-        </button>
-
-        <button
-          id="btn-toggle-labels"
-          type="button"
-          className={`dock-icon-btn ${layers.labels ? "is-active" : ""}`}
-          onClick={() => onToggleLayer("labels")}
-          title={layers.labels ? "지명·기온 라벨 표시 중" : "지명 라벨 숨김"}
-          aria-label="지명 라벨 전환"
-        >
-          <MapLabelIcon size={16} />
         </button>
 
         <button

@@ -8,14 +8,10 @@ interface CacheEntry<T> {
 }
 
 /**
- * High-concurrency in-memory Singleflight + Stale-While-Revalidate cache.
- *
- * Works alongside Vercel Edge CDN (`s-maxage` + `stale-while-revalidate`):
- * 1. Vercel CDN absorbs 99%+ of global traffic across edge PoPs.
- * 2. When a cold/warm serverless instance receives concurrent bursts,
- *    `inFlight` coalesces them into a single upstream request.
- * 3. If an upstream API stalls or errors, stale data is served immediately
- *    instead of failing the user's request.
+ * High-concurrency 3-tier cache:
+ * L1: In-memory Singleflight + SWR per serverless instance
+ * L2: Optional Upstash Redis REST distributed cache (when UPSTASH_REDIS_REST_URL/TOKEN set)
+ * L3: Vercel Edge CDN (`s-maxage` + `stale-while-revalidate`)
  */
 const store = new Map<string, CacheEntry<unknown>>();
 const inFlight = new Map<string, Promise<unknown>>();
@@ -30,11 +26,57 @@ function pruneStoreIfNeeded() {
       store.delete(k);
     }
   }
-  // If still oversized, evict oldest entries (Map preserves insertion order)
   while (store.size > MAX_ENTRIES * 0.8) {
     const oldestKey = store.keys().next().value;
     if (!oldestKey) break;
     store.delete(oldestKey);
+  }
+}
+
+async function redisGet<T>(key: string): Promise<{ value: T; updatedAt: string } | null> {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return null;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1800);
+    const res = await fetch(`${url.replace(/\/$/, "")}/get/${encodeURIComponent(`tp:${key}`)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+      cache: "no-store",
+    });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const json = (await res.json()) as { result?: string | null };
+    if (!json.result) return null;
+    return JSON.parse(json.result) as { value: T; updatedAt: string };
+  } catch {
+    return null;
+  }
+}
+
+async function redisSet<T>(key: string, value: T, updatedAt: string, ttlSeconds: number): Promise<void> {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return;
+  try {
+    const body = JSON.stringify({ value, updatedAt });
+    // Avoid writing huge >800KB payloads into Redis REST
+    if (body.length > 800_000) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2000);
+    await fetch(
+      `${url.replace(/\/$/, "")}/set/${encodeURIComponent(`tp:${key}`)}?EX=${Math.max(30, ttlSeconds)}`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body,
+        signal: controller.signal,
+      }
+    );
+    clearTimeout(timer);
+  } catch {
+    // Non-blocking distributed cache write
   }
 }
 
@@ -54,7 +96,7 @@ export async function cachedFetch<T>(options: {
   const now = Date.now();
   const existing = store.get(key) as CacheEntry<T> | undefined;
 
-  // Fresh hit
+  // L1 Fresh in-memory hit
   if (existing && now < existing.expiresAt) {
     return {
       data: existing.value,
@@ -64,8 +106,26 @@ export async function cachedFetch<T>(options: {
     };
   }
 
-  // Singleflight deduplication
+  // L2 Optional Upstash Redis distributed hit (protects cold starts & data.go.kr quota!)
   const started = Date.now();
+  const redisHit = await redisGet<T>(key);
+  if (redisHit) {
+    pruneStoreIfNeeded();
+    store.set(key, {
+      value: redisHit.value,
+      expiresAt: Date.now() + ttlSeconds * 1000,
+      staleUntil: Date.now() + (ttlSeconds + staleSeconds) * 1000,
+      updatedAt: redisHit.updatedAt,
+    });
+    return {
+      data: redisHit.value,
+      status: "cached",
+      updatedAt: redisHit.updatedAt,
+      latencyMs: Date.now() - started,
+    };
+  }
+
+  // Singleflight deduplication
   let promise = inFlight.get(key) as Promise<T> | undefined;
   if (!promise) {
     promise = fetcher()
@@ -78,6 +138,7 @@ export async function cachedFetch<T>(options: {
           staleUntil: Date.now() + (ttlSeconds + staleSeconds) * 1000,
           updatedAt,
         });
+        void redisSet(key, value, updatedAt, ttlSeconds);
         return value;
       })
       .finally(() => {

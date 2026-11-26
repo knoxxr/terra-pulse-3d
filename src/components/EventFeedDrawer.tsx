@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import {
   AirDustIcon,
   AqiGradeIcon,
+  DisasterHazardIcon,
   KoreaBadgeIcon,
   OceanWaveIcon,
   QuakeIcon,
@@ -12,6 +13,7 @@ import {
 import { getMagnitudeColor, getPm25Level, timeAgoKo } from "@/lib/geo";
 import type {
   AirQualityCluster,
+  DisasterEvent,
   EarthquakeEvent,
   OceanNode,
   SelectedItem,
@@ -20,17 +22,19 @@ import type {
 interface EventFeedDrawerProps {
   open: boolean;
   earthquakes: EarthquakeEvent[];
+  disasters: DisasterEvent[];
   ocean: OceanNode[];
   airQuality: AirQualityCluster[];
   onClose: () => void;
   onSelect: (item: SelectedItem, altitude?: number) => void;
 }
 
-type FeedTab = "quakes" | "korea" | "air" | "ocean";
+type FeedTab = "korea" | "quakes" | "disasters" | "air" | "ocean";
 
 export default function EventFeedDrawer({
   open,
   earthquakes,
+  disasters,
   ocean,
   airQuality,
   onClose,
@@ -62,6 +66,19 @@ export default function EventFeedDrawer({
     [ocean]
   );
 
+  const topDisasters = useMemo(() => {
+    const priority: Record<string, number> = {
+      severeStorms: 0,
+      volcanoes: 1,
+      wildfires: 2,
+      seaLakeIce: 3,
+      other: 4,
+    };
+    return [...disasters]
+      .sort((a, b) => (priority[a.category] ?? 4) - (priority[b.category] ?? 4))
+      .slice(0, 24);
+  }, [disasters]);
+
   if (!open) return null;
 
   return (
@@ -76,7 +93,7 @@ export default function EventFeedDrawer({
         </button>
       </div>
 
-      <div className="feed-tabs" role="tablist">
+      <div className="feed-tabs feed-tabs-5" role="tablist">
         <button
           type="button"
           role="tab"
@@ -84,8 +101,8 @@ export default function EventFeedDrawer({
           className={`feed-tab ${tab === "korea" ? "is-active" : ""}`}
           onClick={() => setTab("korea")}
         >
-          <KoreaBadgeIcon size={14} />
-          <span>한국 대기</span>
+          <KoreaBadgeIcon size={13} />
+          <span>한국</span>
         </button>
         <button
           type="button"
@@ -94,8 +111,18 @@ export default function EventFeedDrawer({
           className={`feed-tab ${tab === "quakes" ? "is-active" : ""}`}
           onClick={() => setTab("quakes")}
         >
-          <QuakeIcon size={14} />
+          <QuakeIcon size={13} />
           <span>지진</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "disasters"}
+          className={`feed-tab ${tab === "disasters" ? "is-active" : ""}`}
+          onClick={() => setTab("disasters")}
+        >
+          <DisasterHazardIcon size={13} />
+          <span>재해</span>
         </button>
         <button
           type="button"
@@ -104,8 +131,8 @@ export default function EventFeedDrawer({
           className={`feed-tab ${tab === "air" ? "is-active" : ""}`}
           onClick={() => setTab("air")}
         >
-          <AirDustIcon size={14} />
-          <span>글로벌 PM</span>
+          <AirDustIcon size={13} />
+          <span>PM</span>
         </button>
         <button
           type="button"
@@ -114,7 +141,7 @@ export default function EventFeedDrawer({
           className={`feed-tab ${tab === "ocean" ? "is-active" : ""}`}
           onClick={() => setTab("ocean")}
         >
-          <OceanWaveIcon size={14} />
+          <OceanWaveIcon size={13} />
           <span>파고</span>
         </button>
       </div>
@@ -192,6 +219,53 @@ export default function EventFeedDrawer({
             </button>
           ))}
 
+        {tab === "disasters" &&
+          topDisasters.map((ev) => {
+            const color =
+              ev.category === "volcanoes"
+                ? "#ef4444"
+                : ev.category === "wildfires"
+                  ? "#f97316"
+                  : "#38bdf8";
+            return (
+              <button
+                key={ev.id}
+                type="button"
+                className="feed-item"
+                onClick={() => onSelect({ kind: "disaster", data: ev }, 1.65)}
+              >
+                <span
+                  className="feed-badge"
+                  style={{ color, backgroundColor: `${color}22` }}
+                >
+                  {ev.category === "wildfires"
+                    ? "산불"
+                    : ev.category === "volcanoes"
+                      ? "화산"
+                      : ev.category === "severeStorms"
+                        ? "태풍"
+                        : "빙산"}
+                </span>
+                <div className="feed-item-body">
+                  <div className="feed-item-title">{ev.title}</div>
+                  <div className="feed-item-meta">
+                    <span>{ev.provider}</span>
+                    <span>·</span>
+                    <span>{ev.date.slice(0, 10)}</span>
+                    {ev.magnitudeValue != null && (
+                      <>
+                        <span>·</span>
+                        <span>
+                          {ev.magnitudeValue.toLocaleString()} {ev.magnitudeUnit ?? ""}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+
         {tab === "air" &&
           topAir.map((a) => {
             const lvl = getPm25Level(a.pm25);
@@ -217,12 +291,6 @@ export default function EventFeedDrawer({
                     <span style={{ color: lvl.color }}>{lvl.label}</span>
                     <span>·</span>
                     <span>{a.provider}</span>
-                    {a.pm10 !== null && (
-                      <>
-                        <span>·</span>
-                        <span>PM10 {a.pm10.toFixed(0)}</span>
-                      </>
-                    )}
                   </div>
                 </div>
               </button>

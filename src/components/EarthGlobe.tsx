@@ -4,8 +4,10 @@ import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { createEarthAssets } from "@/lib/earthTexture";
+import { buildTectonicPlateGeometry } from "@/lib/tectonicPlates";
 import {
   classifyAqiIcon,
+  classifyDisasterIcon,
   classifyOceanIcon,
   classifyQuakeIcon,
   classifyWeatherIcon,
@@ -24,6 +26,7 @@ import {
 import type {
   AirQualityCluster,
   CameraTelemetry,
+  DisasterEvent,
   EarthquakeEvent,
   LayerVisibility,
   OceanNode,
@@ -34,6 +37,7 @@ import type {
 
 interface EarthGlobeProps {
   earthquakes: EarthquakeEvent[];
+  disasters: DisasterEvent[];
   weather: WeatherNode[];
   ocean: OceanNode[];
   airQuality: AirQualityCluster[];
@@ -41,6 +45,7 @@ interface EarthGlobeProps {
   selected: SelectedItem | null;
   flyToTarget: { lat: number; lng: number; altitude?: number; nonce: number } | null;
   zoomCommand: ZoomCommand | null;
+  captureRef: React.MutableRefObject<(() => string | null) | null>;
   onSelect: (item: SelectedItem) => void;
   onTelemetry: (telemetry: CameraTelemetry) => void;
 }
@@ -233,6 +238,7 @@ function offsetLatLng(lat: number, lng: number, bearingDeg: number, distDeg: num
 
 export default function EarthGlobe({
   earthquakes,
+  disasters,
   weather,
   ocean,
   airQuality,
@@ -240,6 +246,7 @@ export default function EarthGlobe({
   selected,
   flyToTarget,
   zoomCommand,
+  captureRef,
   onSelect,
   onTelemetry,
 }: EarthGlobeProps) {
@@ -247,10 +254,10 @@ export default function EarthGlobe({
   const labelsLayerRef = useRef<HTMLDivElement | null>(null);
   const [tooltip, setTooltip] = useState<HoverTooltip | null>(null);
 
-  const dataRef = useRef({ earthquakes, weather, ocean, airQuality, layers });
+  const dataRef = useRef({ earthquakes, disasters, weather, ocean, airQuality, layers });
   useEffect(() => {
-    dataRef.current = { earthquakes, weather, ocean, airQuality, layers };
-  }, [earthquakes, weather, ocean, airQuality, layers]);
+    dataRef.current = { earthquakes, disasters, weather, ocean, airQuality, layers };
+  }, [earthquakes, disasters, weather, ocean, airQuality, layers]);
 
   const onSelectRef = useRef(onSelect);
   useEffect(() => {
@@ -272,6 +279,7 @@ export default function EarthGlobe({
     iconAtlas?: GlobeIconAtlas;
     earthMat?: THREE.ShaderMaterial;
     cloudMesh?: THREE.Mesh;
+    tectonicLines?: THREE.LineSegments;
     coastMat?: THREE.LineBasicMaterial;
     borderMat?: THREE.LineBasicMaterial;
     graticuleMat?: THREE.LineBasicMaterial;
@@ -280,6 +288,8 @@ export default function EarthGlobe({
     quakeGroup?: THREE.Group;
     quakeSprites?: ScalableSprite[];
     pulseRings?: Array<{ mesh: THREE.Mesh; phase: number; maxScale: number }>;
+    disasterGroup?: THREE.Group;
+    disasterSprites?: ScalableSprite[];
     weatherGroup?: THREE.Group;
     weatherSprites?: ScalableSprite[];
     windStreamGroup?: THREE.Group;
@@ -497,6 +507,18 @@ export default function EarthGlobe({
     });
     scene.add(new THREE.LineSegments(assets.borderGeometry, borderMat));
 
+    // Tectonic Plate Boundaries 3D vector overlay (Ring of Fire, Mid-Atlantic Ridge, Alpine-Himalayan belt)
+    const tectonicGeo = buildTectonicPlateGeometry(EARTH_RADIUS + 0.0024);
+    const tectonicMat = new THREE.LineBasicMaterial({
+      color: 0xf97316,
+      transparent: true,
+      opacity: 0.42,
+      depthWrite: false,
+    });
+    const tectonicLines = new THREE.LineSegments(tectonicGeo, tectonicMat);
+    tectonicLines.visible = dataRef.current.layers.tectonic;
+    scene.add(tectonicLines);
+
     const cloudGeo = new THREE.SphereGeometry(
       EARTH_RADIUS * 1.0072,
       isMobile ? 48 : 64,
@@ -525,12 +547,21 @@ export default function EarthGlobe({
 
     // Data layer groups
     const quakeGroup = new THREE.Group();
+    const disasterGroup = new THREE.Group();
     const weatherGroup = new THREE.Group();
     const windStreamGroup = new THREE.Group();
     const oceanGroup = new THREE.Group();
     const oceanStreamGroup = new THREE.Group();
     const airGroup = new THREE.Group();
-    scene.add(quakeGroup, weatherGroup, windStreamGroup, oceanGroup, oceanStreamGroup, airGroup);
+    scene.add(
+      quakeGroup,
+      disasterGroup,
+      weatherGroup,
+      windStreamGroup,
+      oceanGroup,
+      oceanStreamGroup,
+      airGroup
+    );
 
     // Selection reticle
     const reticleGroup = new THREE.Group();
@@ -556,10 +587,17 @@ export default function EarthGlobe({
     reticleGroup.add(outerRing, innerRing);
     scene.add(reticleGroup);
 
+    // Expose on-demand crisp WebGL snapshot capture (forces synchronous render before toDataURL)
+    captureRef.current = () => {
+      renderer.render(scene, camera);
+      return renderer.domElement.toDataURL("image/png");
+    };
+
     sceneHandlesRef.current = {
       iconAtlas,
       earthMat,
       cloudMesh,
+      tectonicLines,
       coastMat,
       borderMat,
       graticuleMat,
@@ -568,6 +606,8 @@ export default function EarthGlobe({
       quakeGroup,
       quakeSprites: [],
       pulseRings: [],
+      disasterGroup,
+      disasterSprites: [],
       weatherGroup,
       weatherSprites: [],
       windStreamGroup,
@@ -603,6 +643,9 @@ export default function EarthGlobe({
       if (d.layers.earthquakes && h.quakeSprites) {
         for (const s of h.quakeSprites) candidates.push(s.sprite);
       }
+      if (d.layers.disasters && h.disasterSprites) {
+        for (const s of h.disasterSprites) candidates.push(s.sprite);
+      }
       if (d.layers.weather && h.weatherSprites) {
         for (const s of h.weatherSprites) candidates.push(s.sprite);
       }
@@ -620,13 +663,15 @@ export default function EarthGlobe({
 
       const hits = raycaster.intersectObjects(candidates, false);
       if (hits.length > 0) {
-        // Ignore hits that are behind the Earth sphere (farther than Earth center distance)
         const maxFrontDist = camera.position.length() + 0.08;
         const hit = hits.find((item) => item.distance <= maxFrontDist);
         if (hit) {
           const ud = hit.object.userData as { kind?: string; index?: number } | undefined;
           if (ud?.kind === "earthquake" && typeof ud.index === "number" && d.earthquakes[ud.index]) {
             return { kind: "earthquake" as const, data: d.earthquakes[ud.index] };
+          }
+          if (ud?.kind === "disaster" && typeof ud.index === "number" && d.disasters[ud.index]) {
+            return { kind: "disaster" as const, data: d.disasters[ud.index] };
           }
           if (ud?.kind === "weather" && typeof ud.index === "number" && d.weather[ud.index]) {
             return { kind: "weather" as const, data: d.weather[ud.index] };
@@ -725,6 +770,22 @@ export default function EarthGlobe({
           badgeColor: getMagnitudeColor(q.mag),
           title: q.place,
           subtitle: `진원 깊이 ${q.depthKm.toFixed(1)} km · USGS`,
+        });
+      } else if (picked.kind === "disaster") {
+        const ev = picked.data;
+        const color =
+          ev.category === "volcanoes"
+            ? "#ef4444"
+            : ev.category === "wildfires"
+              ? "#f97316"
+              : "#38bdf8";
+        setTooltip({
+          x: tx,
+          y: ty,
+          badge: ev.categoryKo,
+          badgeColor: color,
+          title: ev.title,
+          subtitle: `${ev.provider} · ${ev.date.slice(0, 10)}`,
         });
       } else if (picked.kind === "weather") {
         const w = picked.data;
@@ -953,6 +1014,7 @@ export default function EarthGlobe({
       };
 
       if (h.quakeGroup?.visible) scaleSpriteList(h.quakeSprites);
+      if (h.disasterGroup?.visible) scaleSpriteList(h.disasterSprites);
       if (h.weatherGroup?.visible) scaleSpriteList(h.weatherSprites);
       if (h.oceanGroup?.visible) scaleSpriteList(h.oceanSprites);
       if (h.airGroup?.visible) scaleSpriteList(h.airBadgeSprites);
@@ -998,9 +1060,13 @@ export default function EarthGlobe({
 
       if (nowMs - lastTelemetryTime > 100) {
         lastTelemetryTime = nowMs;
+        const camCoords = vector3ToLatLng(camera.position.x, camera.position.y, camera.position.z);
         onTelemetryRef.current({
           altitudeKm: Math.round((camDist - EARTH_RADIUS) * EARTH_RADIUS_KM),
           zoomPct: Math.round(zoomNorm * 100),
+          cameraLat: Math.round(camCoords.lat * 100) / 100,
+          cameraLng: Math.round(camCoords.lng * 100) / 100,
+          cameraDist: Math.round(camDist * 100) / 100,
           cursorLat: cursorCoordRef.current.lat,
           cursorLng: cursorCoordRef.current.lng,
         });
@@ -1009,6 +1075,7 @@ export default function EarthGlobe({
     animate();
 
     return () => {
+      captureRef.current = null;
       cancelAnimationFrame(rafId);
       resizeObserver.disconnect();
       renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
@@ -1020,6 +1087,8 @@ export default function EarthGlobe({
       controls.dispose();
       iconAtlas.dispose();
       assets.dispose();
+      tectonicGeo.dispose();
+      tectonicMat.dispose();
       earthGeo.dispose();
       earthMat.dispose();
       graticuleMat.dispose();
@@ -1041,21 +1110,78 @@ export default function EarthGlobe({
         container.removeChild(renderer.domElement);
       }
     };
-  }, []);
+  }, [captureRef]);
 
   // 2. Sync layer visibility
   useEffect(() => {
     const h = sceneHandlesRef.current;
     if (h.earthMat) h.earthMat.uniforms.uDayNightMix.value = layers.dayNight ? 1.0 : 0.0;
     if (h.cloudMesh) h.cloudMesh.visible = layers.clouds;
+    if (h.tectonicLines) h.tectonicLines.visible = layers.tectonic;
     if (h.controls) h.controls.autoRotate = layers.autoRotate;
     if (h.quakeGroup) h.quakeGroup.visible = layers.earthquakes;
+    if (h.disasterGroup) h.disasterGroup.visible = layers.disasters;
     if (h.weatherGroup) h.weatherGroup.visible = layers.weather;
     if (h.windStreamGroup) h.windStreamGroup.visible = layers.weather;
     if (h.oceanGroup) h.oceanGroup.visible = layers.ocean;
     if (h.oceanStreamGroup) h.oceanStreamGroup.visible = layers.ocean;
     if (h.airGroup) h.airGroup.visible = layers.airQuality;
   }, [layers]);
+
+  // 2b. Rebuild NASA EONET Natural Disaster Icon Sprites + 3D Storm Tracks
+  useEffect(() => {
+    const h = sceneHandlesRef.current;
+    const group = h.disasterGroup;
+    const atlas = h.iconAtlas;
+    if (!group || !atlas) return;
+
+    while (group.children.length > 0) {
+      const child = group.children[0];
+      group.remove(child);
+      if (child instanceof THREE.Line) {
+        child.geometry.dispose();
+        if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
+        else child.material.dispose();
+      } else if (child instanceof THREE.Sprite) {
+        child.material.dispose();
+      }
+    }
+    h.disasterSprites = [];
+
+    if (disasters.length === 0) return;
+
+    disasters.forEach((ev, idx) => {
+      const [x, y, z] = latLngToVector3(ev.lat, ev.lng, EARTH_RADIUS + 0.022);
+      const iconKey = classifyDisasterIcon(ev.category);
+      const mat = new THREE.SpriteMaterial({
+        map: atlas.disaster[iconKey],
+        transparent: true,
+        depthWrite: false,
+      });
+      const sprite = new THREE.Sprite(mat);
+      sprite.position.set(x, y, z);
+      const baseScale = ev.category === "severeStorms" || ev.category === "volcanoes" ? 0.062 : 0.048;
+      sprite.scale.set(baseScale, baseScale, 1);
+      sprite.userData = { kind: "disaster", index: idx };
+      group.add(sprite);
+      h.disasterSprites!.push({ sprite, baseScale });
+
+      // Draw curved 3D trajectory line for moving storms / cyclones
+      if (ev.track && ev.track.length >= 2) {
+        const pts = ev.track.map(([tLat, tLng]) => {
+          const [tx, ty, tz] = latLngToVector3(tLat, tLng, EARTH_RADIUS + 0.015);
+          return new THREE.Vector3(tx, ty, tz);
+        });
+        const lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
+        const lineMat = new THREE.LineBasicMaterial({
+          color: ev.category === "severeStorms" ? 0x38bdf8 : 0xf97316,
+          transparent: true,
+          opacity: 0.72,
+        });
+        group.add(new THREE.Line(lineGeo, lineMat));
+      }
+    });
+  }, [disasters]);
 
   // 3. Rebuild Earthquake Seismic Epicenter Icon Sprites + Depth Stems + Shockwave Rings
   useEffect(() => {

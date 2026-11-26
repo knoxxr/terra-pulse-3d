@@ -9,6 +9,9 @@
     "src/app/api/korea-air-quality/route.ts": {
       "maxDuration": 25
     },
+    "src/app/api/disasters/route.ts": {
+      "maxDuration": 20
+    },
     "src/app/api/weather-ocean/route.ts": {
       "maxDuration": 25
     },
@@ -17,8 +20,17 @@
     },
     "src/app/api/point-inspect/route.ts": {
       "maxDuration": 15
+    },
+    "src/app/api/cron/warmup/route.ts": {
+      "maxDuration": 30
     }
   },
+  "crons": [
+    {
+      "path": "/api/cron/warmup",
+      "schedule": "0 0 * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/api/(.*)",

@@ -5,6 +5,7 @@ import { GLOBAL_OCEAN_ANCHORS, GLOBAL_WEATHER_ANCHORS } from "@/lib/locations";
 import type {
   ApiEnvelope,
   OceanNode,
+  WeatherForecastStep,
   WeatherNode,
   WeatherOceanPayload,
 } from "@/types/telemetry";
@@ -22,6 +23,12 @@ interface OpenMeteoForecastItem {
     wind_direction_10m?: number | null;
     is_day?: number | null;
   };
+  hourly?: {
+    temperature_2m?: number[];
+    wind_speed_10m?: number[];
+    wind_direction_10m?: number[];
+    weather_code?: number[];
+  };
 }
 
 interface OpenMeteoMarineItem {
@@ -34,7 +41,7 @@ interface OpenMeteoMarineItem {
   };
 }
 
-async function fetchJsonWithTimeout<T>(url: string, timeoutMs = 11000): Promise<T> {
+async function fetchJsonWithTimeout<T>(url: string, timeoutMs = 12000): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -51,11 +58,11 @@ async function fetchJsonWithTimeout<T>(url: string, timeoutMs = 11000): Promise<
 }
 
 export async function GET() {
-  const ttlSeconds = 600; // 10 min Edge CDN cache -> absorbs massive global traffic
+  const ttlSeconds = 600;
   const staleSeconds = 1200;
 
   const result = await cachedFetch<WeatherOceanPayload>({
-    key: "open-meteo:global-weather-ocean:v1",
+    key: "open-meteo:global-weather-ocean:v2",
     ttlSeconds,
     staleSeconds,
     fetcher: async () => {
@@ -64,6 +71,7 @@ export async function GET() {
       const weatherUrl =
         `https://api.open-meteo.com/v1/forecast?latitude=${wLats}&longitude=${wLngs}` +
         `&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,surface_pressure,wind_speed_10m,wind_direction_10m,is_day` +
+        `&hourly=temperature_2m,wind_speed_10m,wind_direction_10m,weather_code&forecast_hours=25` +
         `&wind_speed_unit=kmh&timezone=GMT`;
 
       const oLats = GLOBAL_OCEAN_ANCHORS.map((a) => a.lat).join(",");
@@ -86,6 +94,24 @@ export async function GET() {
         const anchor = GLOBAL_WEATHER_ANCHORS[i];
         const cur = wArr[i]?.current;
         if (!cur || typeof cur.temperature_2m !== "number") continue;
+
+        // Extract 3-hour interval forecast steps (+0h .. +24h) for smooth 24h timeline scrubbing
+        const h = wArr[i]?.hourly;
+        const forecastSteps: WeatherForecastStep[] = [];
+        if (h?.temperature_2m && h.wind_speed_10m && h.wind_direction_10m && h.weather_code) {
+          for (let hr = 0; hr <= 24; hr += 3) {
+            if (hr < h.temperature_2m.length) {
+              forecastSteps.push({
+                offsetHours: hr,
+                tempC: Math.round((h.temperature_2m[hr] ?? cur.temperature_2m) * 10) / 10,
+                windSpeedKmh: Math.round((h.wind_speed_10m[hr] ?? cur.wind_speed_10m ?? 0) * 10) / 10,
+                windDirDeg: Math.round(h.wind_direction_10m[hr] ?? cur.wind_direction_10m ?? 0),
+                weatherCode: h.weather_code[hr] ?? cur.weather_code ?? 0,
+              });
+            }
+          }
+        }
+
         weather.push({
           id: anchor.id,
           name: anchor.name,
@@ -100,6 +126,7 @@ export async function GET() {
           humidityPct: Math.round(cur.relative_humidity_2m ?? 0),
           pressureHpa: Math.round(cur.surface_pressure ?? 1013),
           isDay: cur.is_day === 1,
+          forecastSteps: forecastSteps.length > 0 ? forecastSteps : undefined,
         });
       }
 
@@ -129,7 +156,7 @@ export async function GET() {
       return {
         weather,
         ocean,
-        modelInfo: "Open-Meteo (ECMWF IFS · NOAA GFS · Marine WAM)",
+        modelInfo: "Open-Meteo (ECMWF IFS · NOAA GFS · Marine WAM · +24h 예보)",
       };
     },
     fallback: getFallbackWeatherOcean,

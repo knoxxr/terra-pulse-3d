@@ -24,10 +24,41 @@ export interface EarthquakeEvent {
   lng: number;
   depthKm: number;
   tsunami: boolean;
-  alert: string | null; // green | yellow | orange | red
+  alert: string | null;
   sig: number;
   felt: number | null;
   url: string;
+}
+
+export type DisasterCategory =
+  | "wildfires"
+  | "volcanoes"
+  | "severeStorms"
+  | "seaLakeIce"
+  | "other";
+
+export interface DisasterEvent {
+  id: string;
+  title: string;
+  category: DisasterCategory;
+  categoryKo: string;
+  lat: number;
+  lng: number;
+  date: string;
+  magnitudeValue: number | null;
+  magnitudeUnit: string | null;
+  sourceUrl: string;
+  provider: string;
+  /** Optional multi-point path [lat, lng][] for moving storms/cyclones */
+  track?: Array<[number, number]>;
+}
+
+export interface WeatherForecastStep {
+  offsetHours: number;
+  tempC: number;
+  windSpeedKmh: number;
+  windDirDeg: number;
+  weatherCode: number;
 }
 
 export interface WeatherNode {
@@ -44,6 +75,8 @@ export interface WeatherNode {
   humidityPct: number;
   pressureHpa: number;
   isDay: boolean;
+  /** Compact 3-hour interval forecast for 24h timeline scrubber */
+  forecastSteps?: WeatherForecastStep[];
 }
 
 export interface OceanNode {
@@ -75,8 +108,8 @@ export interface AirQualityCluster {
   id: string;
   lat: number;
   lng: number;
-  pm25: number; // µg/m³
-  pm10: number | null; // µg/m³
+  pm25: number;
+  pm10: number | null;
   tempC: number | null;
   humidityPct: number | null;
   pressureHpa: number | null;
@@ -84,12 +117,11 @@ export interface AirQualityCluster {
   country: string;
   provider: AirQualityProvider;
   timestamp: string;
-  // Official AirKorea (data.go.kr) & 6-pollutant telemetry fields
   stationName?: string;
   sidoName?: string;
   mangName?: string | null;
   khaiValue?: number | null;
-  khaiGrade?: number | null; // 1: 좋음, 2: 보통, 3: 나쁨, 4: 매우나쁨
+  khaiGrade?: number | null;
   o3Ppm?: number | null;
   no2Ppm?: number | null;
   coPpm?: number | null;
@@ -139,6 +171,7 @@ export interface PointInspectData {
 
 export type SelectedItem =
   | { kind: "earthquake"; data: EarthquakeEvent }
+  | { kind: "disaster"; data: DisasterEvent }
   | { kind: "weather"; data: WeatherNode }
   | { kind: "ocean"; data: OceanNode }
   | { kind: "air"; data: AirQualityCluster }
@@ -146,9 +179,11 @@ export type SelectedItem =
 
 export interface LayerVisibility {
   earthquakes: boolean;
+  disasters: boolean;
   weather: boolean;
   ocean: boolean;
   airQuality: boolean;
+  tectonic: boolean;
   dayNight: boolean;
   clouds: boolean;
   labels: boolean;
@@ -157,7 +192,10 @@ export interface LayerVisibility {
 
 export interface CameraTelemetry {
   altitudeKm: number;
-  zoomPct: number; // 0..100
+  zoomPct: number;
+  cameraLat: number;
+  cameraLng: number;
+  cameraDist: number;
   cursorLat: number | null;
   cursorLng: number | null;
 }
@@ -165,4 +203,12 @@ export interface CameraTelemetry {
 export interface ZoomCommand {
   action: "in" | "out" | "reset";
   nonce: number;
+}
+
+export interface SavedPin {
+  id: string;
+  label: string;
+  lat: number;
+  lng: number;
+  createdAt: number;
 }

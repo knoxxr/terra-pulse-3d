@@ -2,6 +2,19 @@
 
 USGS 실시간 지진, **NASA EONET 자연재해(산불·화산·태풍·해빙)**, Open-Meteo(NOAA GFS · ECMWF +24h 예보) 글로벌 기상·해양 모델, **한국환경공단 에어코리아(data.go.kr)** 및 Sensor.Community(17,000+ 분산 센서)를 **60fps Three.js WebGL 3D 지구본** 위에 실시간 시각화하는 Vercel 배포·PWA 최적화 웹 애플리케이션입니다.
 
+## 스크린샷 (Screenshots)
+
+### 글로벌 실시간 관측 (동아시아 · 환태평양)
+![TerraPulse 3D Global Overview](screenshots/01-global-overview.png)
+
+| 한국 대기질 · 6대 오염물질 상세 | 지진 계측 · 타임라인 리플레이 |
+| :---: | :---: |
+| ![Korea Air Quality Inspector](screenshots/02-korea-air-inspector.png) | ![Earthquake Timeline Replay](screenshots/03-earthquake-timeline.png) |
+
+| 유럽 환경 센서망 (Sensor.Community) | 모바일 퍼스트 반응형 UI |
+| :---: | :---: |
+| ![Europe Sensor Network](screenshots/04-europe-sensors.png) | <img src="screenshots/05-mobile-view.png" alt="Mobile View" width="260" /> |
+
 ## 주요 기능
 
 - **지진 · 지각판 경계선 (USGS GeoJSON + 3D Tectonic Plates)**: 1분 주기 갱신, 진앙지 과녁·지진파 경보 아이콘, 수직 핀 스템, 파동 링 애니메이션 및 전 지구 지각판 경계선 3D 벡터 오버레이.

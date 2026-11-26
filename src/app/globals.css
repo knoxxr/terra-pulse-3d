@@ -1466,7 +1466,7 @@ button {
 .telemetry-bar {
   position: fixed;
   left: 16px;
-  bottom: 20px;
+  bottom: 74px;
   z-index: 24;
   display: inline-flex;
   align-items: center;

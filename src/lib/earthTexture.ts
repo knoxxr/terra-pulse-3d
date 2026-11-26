@@ -214,7 +214,120 @@ function buildGraticuleGeometry(radius: number): THREE.BufferGeometry {
 }
 
 /**
- * Generates ultra-detailed 50m Natural Earth vector + procedural satellite relief Earth assets:
+ * Stage 1 ultra-fast (<25ms) initial Earth assets so the 3D globe renders immediately
+ * before Stage 2 upgrades to full 4K topographic relief, bathymetry, bump map & clouds!
+ */
+export function createQuickEarthAssets(): EarthAssets {
+  const width = 1024;
+  const height = 512;
+
+  const topo = countriesAtlas50m as unknown as Topology<{
+    countries: GeometryCollection;
+    land: GeometryCollection;
+  }>;
+  const landGeo = feature(topo, topo.objects.land);
+  const countryBorders = mesh(topo, topo.objects.countries, (a, b) => a !== b);
+  const outerCoastlines = mesh(topo, topo.objects.land);
+
+  const buildLandPath = (ctx: CanvasRenderingContext2D) => {
+    ctx.beginPath();
+    const features = "features" in landGeo ? landGeo.features : [landGeo];
+    for (const feat of features) {
+      const geom = feat.geometry;
+      if (!geom) continue;
+      if (geom.type === "Polygon") {
+        drawPolygonCoords(ctx, geom.coordinates as GeoRing[], width, height);
+      } else if (geom.type === "MultiPolygon") {
+        for (const poly of geom.coordinates) {
+          drawPolygonCoords(ctx, poly as GeoRing[], width, height);
+        }
+      }
+    }
+  };
+
+  const dayCanvas = document.createElement("canvas");
+  dayCanvas.width = width;
+  dayCanvas.height = height;
+  const dCtx = dayCanvas.getContext("2d")!;
+  const oceanGrad = dCtx.createLinearGradient(0, 0, 0, height);
+  oceanGrad.addColorStop(0, "#0a192c");
+  oceanGrad.addColorStop(0.5, "#092846");
+  oceanGrad.addColorStop(1, "#0a192c");
+  dCtx.fillStyle = oceanGrad;
+  dCtx.fillRect(0, 0, width, height);
+  buildLandPath(dCtx);
+  dCtx.fillStyle = "#223b3b";
+  dCtx.fill();
+
+  const nightCanvas = document.createElement("canvas");
+  nightCanvas.width = width;
+  nightCanvas.height = height;
+  const nCtx = nightCanvas.getContext("2d")!;
+  nCtx.fillStyle = "#020710";
+  nCtx.fillRect(0, 0, width, height);
+  buildLandPath(nCtx);
+  nCtx.fillStyle = "#07111f";
+  nCtx.fill();
+
+  const specCanvas = document.createElement("canvas");
+  specCanvas.width = 512;
+  specCanvas.height = 256;
+  const sCtx = specCanvas.getContext("2d")!;
+  sCtx.fillStyle = "#ffffff";
+  sCtx.fillRect(0, 0, 512, 256);
+
+  const bumpCanvas = document.createElement("canvas");
+  bumpCanvas.width = 64;
+  bumpCanvas.height = 32;
+  const bCtx = bumpCanvas.getContext("2d")!;
+  bCtx.fillStyle = "#808080";
+  bCtx.fillRect(0, 0, 64, 32);
+
+  const cloudCanvas = document.createElement("canvas");
+  cloudCanvas.width = 64;
+  cloudCanvas.height = 32;
+
+  const coastLines: GeoRing[] =
+    outerCoastlines.type === "MultiLineString" ? (outerCoastlines.coordinates as GeoRing[]) : [];
+  const borderLines: GeoRing[] =
+    countryBorders.type === "MultiLineString" ? (countryBorders.coordinates as GeoRing[]) : [];
+
+  const coastlineGeometry = buildLineSegmentsFromMultiLine(coastLines, 1.0014);
+  const borderGeometry = buildLineSegmentsFromMultiLine(borderLines, 1.0016);
+  const graticuleGeometry = buildGraticuleGeometry(1.0009);
+
+  const dayMap = new THREE.CanvasTexture(dayCanvas);
+  dayMap.colorSpace = THREE.SRGBColorSpace;
+  const nightMap = new THREE.CanvasTexture(nightCanvas);
+  nightMap.colorSpace = THREE.SRGBColorSpace;
+  const specularMap = new THREE.CanvasTexture(specCanvas);
+  const bumpMap = new THREE.CanvasTexture(bumpCanvas);
+  const cloudMap = new THREE.CanvasTexture(cloudCanvas);
+
+  return {
+    dayMap,
+    nightMap,
+    specularMap,
+    bumpMap,
+    cloudMap,
+    coastlineGeometry,
+    borderGeometry,
+    graticuleGeometry,
+    dispose: () => {
+      dayMap.dispose();
+      nightMap.dispose();
+      specularMap.dispose();
+      bumpMap.dispose();
+      cloudMap.dispose();
+      coastlineGeometry.dispose();
+      borderGeometry.dispose();
+      graticuleGeometry.dispose();
+    },
+  };
+}
+
+/**
+ * Stage 2 ultra-detailed 50m Natural Earth vector + procedural satellite relief Earth assets:
  * - Day Albedo (bathymetry, shallow coastal shelves, biomes, mountain ridges, polar ice)
  * - Night Albedo (nocturnal landmasses + warm amber metropolitan light networks)
  * - Terrain Bump/Elevation Map (for GLSL sunlight relief shading)

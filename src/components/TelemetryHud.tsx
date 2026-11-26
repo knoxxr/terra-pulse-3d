@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Clock, Crosshair } from "lucide-react";
 import { AirDustIcon, OceanWaveIcon, QuakeIcon } from "./DomainIcons";
 import { formatCoord, getMagnitudeColor, getPm25Level } from "@/lib/geo";
+import { UI_TEXT, type Lang } from "@/lib/i18n";
 import type {
   AirQualityCluster,
   CameraTelemetry,
@@ -17,6 +18,7 @@ interface TelemetryHudProps {
   earthquakes: EarthquakeEvent[];
   ocean: OceanNode[];
   airQuality: AirQualityCluster[];
+  lang: Lang;
   onQuickSelect: (item: SelectedItem, altitude?: number) => void;
 }
 
@@ -25,8 +27,10 @@ export default function TelemetryHud({
   earthquakes,
   ocean,
   airQuality,
+  lang,
   onQuickSelect,
 }: TelemetryHudProps) {
+  const t = UI_TEXT[lang];
   const [clockText, setClockText] = useState<{ kst: string; utc: string }>(() => ({
     kst: "--:--",
     utc: "--:--",
@@ -72,7 +76,7 @@ export default function TelemetryHud({
             title={`최대 규모 지진 이동: ${strongestQuake.place}`}
           >
             <QuakeIcon size={15} color={getMagnitudeColor(strongestQuake.mag)} />
-            <span className="extreme-k">최대 지진</span>
+            <span className="extreme-k">{t.maxQuake}</span>
             <strong className="extreme-v mono" style={{ color: getMagnitudeColor(strongestQuake.mag) }}>
               M {strongestQuake.mag.toFixed(1)}
             </strong>
@@ -87,7 +91,7 @@ export default function TelemetryHud({
             title={`최고 파고 해역 이동: ${highestWave.nameKo}`}
           >
             <OceanWaveIcon size={15} color="#2dd4bf" />
-            <span className="extreme-k">최고 파고</span>
+            <span className="extreme-k">{t.maxWave}</span>
             <strong className="extreme-v mono" style={{ color: "#2dd4bf" }}>
               {highestWave.waveHeightM.toFixed(1)}m
             </strong>
@@ -102,7 +106,7 @@ export default function TelemetryHud({
             title={`최고 초미세먼지 권역 이동: ${highestPm25.stationName ?? highestPm25.country}`}
           >
             <AirDustIcon size={15} color={getPm25Level(highestPm25.pm25).color} />
-            <span className="extreme-k">최고 PM2.5</span>
+            <span className="extreme-k">{t.maxPm25}</span>
             <strong
               className="extreme-v mono"
               style={{ color: getPm25Level(highestPm25.pm25).color }}
@@ -120,7 +124,7 @@ export default function TelemetryHud({
           <span>
             {telemetry.cursorLat !== null && telemetry.cursorLng !== null
               ? formatCoord(telemetry.cursorLat, telemetry.cursorLng)
-              : "지구본 위 포인터 대기"}
+              : t.pointerIdle}
           </span>
         </div>
         <span className="telemetry-sep" />

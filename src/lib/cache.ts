@@ -175,11 +175,22 @@ export async function cachedFetch<T>(options: {
   }
 }
 
-export function buildCdnHeaders(sMaxAge: number, staleWhileRevalidate: number): HeadersInit {
+export function buildCdnHeaders(
+  sMaxAge: number,
+  staleWhileRevalidate: number,
+  cacheStatus?: DataSourceStatus
+): HeadersInit {
+  const mapStatus: Record<DataSourceStatus, string> = {
+    cached: "HIT",
+    live: "MISS",
+    stale: "STALE",
+    fallback: "FALLBACK",
+  };
   return {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": `public, max-age=15, s-maxage=${sMaxAge}, stale-while-revalidate=${staleWhileRevalidate}`,
     "CDN-Cache-Control": `public, s-maxage=${sMaxAge}, stale-while-revalidate=${staleWhileRevalidate}`,
     "Vercel-CDN-Cache-Control": `public, s-maxage=${sMaxAge}, stale-while-revalidate=${staleWhileRevalidate}`,
+    "X-TerraPulse-Cache": cacheStatus ? mapStatus[cacheStatus] : "CDN",
   };
 }

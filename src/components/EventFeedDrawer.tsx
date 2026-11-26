@@ -11,6 +11,7 @@ import {
   QuakeIcon,
 } from "./DomainIcons";
 import { getMagnitudeColor, getPm25Level, timeAgoKo } from "@/lib/geo";
+import type { Lang } from "@/lib/i18n";
 import type {
   AirQualityCluster,
   DisasterEvent,
@@ -25,6 +26,7 @@ interface EventFeedDrawerProps {
   disasters: DisasterEvent[];
   ocean: OceanNode[];
   airQuality: AirQualityCluster[];
+  lang: Lang;
   onClose: () => void;
   onSelect: (item: SelectedItem, altitude?: number) => void;
 }
@@ -37,24 +39,56 @@ export default function EventFeedDrawer({
   disasters,
   ocean,
   airQuality,
+  lang,
   onClose,
   onSelect,
 }: EventFeedDrawerProps) {
   const [tab, setTab] = useState<FeedTab>("korea");
+  const [selectedSido, setSelectedSido] = useState<string | null>(null);
+  const isEn = lang === "en";
 
   const topQuakes = useMemo(
     () => [...earthquakes].sort((a, b) => b.mag - a.mag || b.time - a.time).slice(0, 18),
     [earthquakes]
   );
 
-  const koreaAir = useMemo(
-    () =>
-      airQuality
-        .filter((a) => a.country === "KR")
-        .sort((a, b) => b.pm25 - a.pm25)
-        .slice(0, 35),
+  const allKoreaAir = useMemo(
+    () => airQuality.filter((a) => a.country === "KR").sort((a, b) => b.pm25 - a.pm25),
     [airQuality]
   );
+
+  const sidoSummaries = useMemo(() => {
+    const map = new Map<
+      string,
+      { sido: string; sum: number; count: number; topStation: AirQualityCluster }
+    >();
+    for (const a of allKoreaAir) {
+      const sido = a.sidoName || a.stationName?.split(" ")[0] || "기타";
+      const cur = map.get(sido);
+      if (!cur) {
+        map.set(sido, { sido, sum: a.pm25, count: 1, topStation: a });
+      } else {
+        cur.sum += a.pm25;
+        cur.count += 1;
+        if (a.pm25 > cur.topStation.pm25) cur.topStation = a;
+      }
+    }
+    return Array.from(map.values())
+      .map((s) => ({
+        sido: s.sido,
+        avgPm25: Math.round((s.sum / s.count) * 10) / 10,
+        count: s.count,
+        topStation: s.topStation,
+      }))
+      .sort((a, b) => b.avgPm25 - a.avgPm25);
+  }, [allKoreaAir]);
+
+  const koreaAir = useMemo(() => {
+    const filtered = selectedSido
+      ? allKoreaAir.filter((a) => (a.sidoName || a.stationName?.split(" ")[0] || "기타") === selectedSido)
+      : allKoreaAir;
+    return filtered.slice(0, 35);
+  }, [allKoreaAir, selectedSido]);
 
   const topAir = useMemo(
     () => [...airQuality].sort((a, b) => b.pm25 - a.pm25).slice(0, 18),
@@ -85,8 +119,14 @@ export default function EventFeedDrawer({
     <aside className="feed-drawer" aria-label="실시간 주요 글로벌 및 한국 이벤트 목록">
       <div className="drawer-header">
         <div>
-          <h2 className="drawer-title">실시간 글로벌 · 한국 하이라이트</h2>
-          <p className="drawer-sub">항목을 선택하면 해당 위치로 지구본이 이동합니다</p>
+          <h2 className="drawer-title">
+            {isEn ? "Global & Korea Live Feed" : "실시간 글로벌 · 한국 하이라이트"}
+          </h2>
+          <p className="drawer-sub">
+            {isEn
+              ? "Select any event to fly the 3D globe directly to its location"
+              : "항목을 선택하면 해당 위치로 지구본이 이동합니다"}
+          </p>
         </div>
         <button type="button" className="close-btn" onClick={onClose} aria-label="닫기">
           <X size={16} />
@@ -102,7 +142,7 @@ export default function EventFeedDrawer({
           onClick={() => setTab("korea")}
         >
           <KoreaBadgeIcon size={13} />
-          <span>한국</span>
+          <span>{isEn ? "KR" : "한국"}</span>
         </button>
         <button
           type="button"
@@ -112,7 +152,7 @@ export default function EventFeedDrawer({
           onClick={() => setTab("quakes")}
         >
           <QuakeIcon size={13} />
-          <span>지진</span>
+          <span>{isEn ? "Quake" : "지진"}</span>
         </button>
         <button
           type="button"
@@ -122,7 +162,7 @@ export default function EventFeedDrawer({
           onClick={() => setTab("disasters")}
         >
           <DisasterHazardIcon size={13} />
-          <span>재해</span>
+          <span>{isEn ? "Hazard" : "재해"}</span>
         </button>
         <button
           type="button"
@@ -142,11 +182,51 @@ export default function EventFeedDrawer({
           onClick={() => setTab("ocean")}
         >
           <OceanWaveIcon size={13} />
-          <span>파고</span>
+          <span>{isEn ? "Wave" : "파고"}</span>
         </button>
       </div>
 
       <div className="feed-list">
+        {tab === "korea" && sidoSummaries.length > 0 && (
+          <div className="sido-summary-wrap">
+            <div className="sido-summary-head">
+              <span>{isEn ? "Korea Regional PM2.5 Avg" : "전국 시도별 초미세먼지 평균"}</span>
+              {selectedSido && (
+                <button
+                  type="button"
+                  className="sido-reset-btn"
+                  onClick={() => setSelectedSido(null)}
+                >
+                  {isEn ? "All" : "전체 보기"}
+                </button>
+              )}
+            </div>
+            <div className="sido-mini-grid">
+              {sidoSummaries.map((s) => {
+                const lvl = getPm25Level(s.avgPm25);
+                const active = selectedSido === s.sido;
+                return (
+                  <button
+                    key={s.sido}
+                    type="button"
+                    className={`sido-chip ${active ? "is-active" : ""}`}
+                    onClick={() => {
+                      setSelectedSido(active ? null : s.sido);
+                      onSelect({ kind: "air", data: s.topStation }, 1.38);
+                    }}
+                    title={`${s.sido} 평균 PM2.5 ${s.avgPm25} µg/m³ (${s.count}개소)`}
+                  >
+                    <span className="sido-name">{s.sido}</span>
+                    <strong className="sido-val mono" style={{ color: lvl.color }}>
+                      {Math.round(s.avgPm25)}
+                    </strong>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {tab === "korea" &&
           koreaAir.map((a) => {
             const lvl = getPm25Level(a.pm25);

@@ -9,6 +9,9 @@
     "src/app/api/korea-air-quality/route.ts": {
       "maxDuration": 25
     },
+    "src/app/api/korea-alerts/route.ts": {
+      "maxDuration": 15
+    },
     "src/app/api/disasters/route.ts": {
       "maxDuration": 20
     },

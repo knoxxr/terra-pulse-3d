@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpRight,
   ChevronDown,
@@ -10,6 +10,7 @@ import {
   Droplets,
   Gauge,
   MapPin,
+  Scale,
   Star,
   Thermometer,
   Wind,
@@ -31,6 +32,7 @@ import {
   haversineKm,
   timeAgoKo,
 } from "@/lib/geo";
+import { UI_TEXT, type Lang } from "@/lib/i18n";
 import type {
   AirQualityCluster,
   ApiEnvelope,
@@ -44,7 +46,11 @@ interface InspectorPanelProps {
   earthquakes: EarthquakeEvent[];
   airQuality: AirQualityCluster[];
   isPinned: boolean;
+  compareCount: number;
+  lang: Lang;
   onTogglePin: (label: string, lat: number, lng: number) => void;
+  onAddCompare: (label: string, lat: number, lng: number) => void;
+  onOpenCompare: () => void;
   onClose: () => void;
 }
 
@@ -252,7 +258,11 @@ export default function InspectorPanel({
   earthquakes,
   airQuality,
   isPinned,
+  compareCount,
+  lang,
   onTogglePin,
+  onAddCompare,
+  onOpenCompare,
   onClose,
 }: InspectorPanelProps) {
   const [inspectState, setInspectState] = useState<{
@@ -260,6 +270,8 @@ export default function InspectorPanel({
     data: PointInspectData | null;
   } | null>(null);
   const [expandedMobile, setExpandedMobile] = useState(false);
+  const touchStartYRef = useRef<number | null>(null);
+  const t = UI_TEXT[lang];
 
   const coords = useMemo(() => {
     if (!selected) return null;
@@ -465,7 +477,24 @@ export default function InspectorPanel({
       className={`inspector-panel ${expandedMobile ? "is-expanded" : ""}`}
       aria-label="선택 지점 실시간 상세 데이터"
     >
-      <div className="sheet-handle-bar">
+      <div
+        className="sheet-handle-bar"
+        onTouchStart={(e) => {
+          touchStartYRef.current = e.touches[0]?.clientY ?? null;
+        }}
+        onTouchEnd={(e) => {
+          if (touchStartYRef.current === null) return;
+          const endY = e.changedTouches[0]?.clientY ?? touchStartYRef.current;
+          const deltaY = endY - touchStartYRef.current;
+          touchStartYRef.current = null;
+          if (deltaY < -36) {
+            setExpandedMobile(true);
+          } else if (deltaY > 44) {
+            if (expandedMobile) setExpandedMobile(false);
+            else onClose();
+          }
+        }}
+      >
         <button
           type="button"
           className="sheet-expand-btn"
@@ -479,12 +508,30 @@ export default function InspectorPanel({
         <div className="sheet-top-actions">
           <button
             type="button"
+            className={`pin-action-btn ${compareCount > 0 ? "is-compare-ready" : ""}`}
+            onClick={() => {
+              if (compareCount >= 2) onOpenCompare();
+              else onAddCompare(pinLabel, coords.lat, coords.lng);
+            }}
+            title={compareCount >= 2 ? t.compareNow : t.compareAdd}
+          >
+            <Scale size={14} />
+            <span>
+              {compareCount >= 2
+                ? `${t.compareNow} (2)`
+                : compareCount === 1
+                  ? `${t.compareAdd} (1/2)`
+                  : t.compareAdd}
+            </span>
+          </button>
+          <button
+            type="button"
             className={`pin-action-btn ${isPinned ? "is-pinned" : ""}`}
             onClick={() => onTogglePin(pinLabel, coords.lat, coords.lng)}
             title={isPinned ? "관심 지역 해제" : "관심 지역 즐겨찾기 저장"}
           >
             <Star size={14} fill={isPinned ? "#fbbf24" : "none"} />
-            <span>{isPinned ? "저장됨" : "관심 저장"}</span>
+            <span>{isPinned ? t.savedPin : t.savePin}</span>
           </button>
           <button type="button" className="close-btn" onClick={onClose} aria-label="패널 닫기">
             <X size={16} />

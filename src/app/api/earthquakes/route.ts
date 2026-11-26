@@ -109,6 +109,6 @@ export async function GET(request: NextRequest) {
   };
 
   return NextResponse.json(envelope, {
-    headers: buildCdnHeaders(ttlSeconds, staleSeconds),
+    headers: buildCdnHeaders(ttlSeconds, staleSeconds, result.status),
   });
 }

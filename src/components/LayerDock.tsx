@@ -14,12 +14,22 @@ import {
   WeatherIcon,
 } from "./DomainIcons";
 import { QUICK_JUMP_PRESETS } from "@/lib/locations";
-import type { LayerVisibility, QuakeWindow, SavedPin } from "@/types/telemetry";
+import { UI_TEXT, type Lang } from "@/lib/i18n";
+import type {
+  DisasterCategory,
+  LayerVisibility,
+  QuakeWindow,
+  SavedPin,
+} from "@/types/telemetry";
 
 interface LayerDockProps {
   layers: LayerVisibility;
   quakeWindow: QuakeWindow;
   minMag: number;
+  airDisplayMode: "pillar" | "bubble";
+  badAirOnly: boolean;
+  disasterCategories: Record<DisasterCategory, boolean>;
+  lang: Lang;
   quakeCount: number;
   disasterCount: number;
   weatherCount: number;
@@ -31,6 +41,9 @@ interface LayerDockProps {
   onToggleTimeline: () => void;
   onChangeQuakeWindow: (w: QuakeWindow) => void;
   onChangeMinMag: (mag: number) => void;
+  onChangeAirDisplayMode: (mode: "pillar" | "bubble") => void;
+  onToggleBadAirOnly: () => void;
+  onToggleDisasterCategory: (cat: DisasterCategory) => void;
   onQuickJump: (lat: number, lng: number, label: string, altitude?: number) => void;
 }
 
@@ -38,6 +51,10 @@ export default function LayerDock({
   layers,
   quakeWindow,
   minMag,
+  airDisplayMode,
+  badAirOnly,
+  disasterCategories,
+  lang,
   quakeCount,
   disasterCount,
   weatherCount,
@@ -49,16 +66,23 @@ export default function LayerDock({
   onToggleTimeline,
   onChangeQuakeWindow,
   onChangeMinMag,
+  onChangeAirDisplayMode,
+  onToggleBadAirOnly,
+  onToggleDisasterCategory,
   onQuickJump,
 }: LayerDockProps) {
   const [filterOpen, setFilterOpen] = useState(false);
+  const t = UI_TEXT[lang];
+  const isEn = lang === "en";
 
   return (
     <div className="dock-container">
       {filterOpen && (
         <div className="dock-popover" role="region" aria-label="관측 필터 및 표시 옵션">
           <div className="popover-section">
-            <div className="popover-label">지도 그래픽 · 지질 오버레이</div>
+            <div className="popover-label">
+              {isEn ? "Map Graphics & Geological Overlays" : "지도 그래픽 · 지질 오버레이"}
+            </div>
             <div className="segmented-row">
               <button
                 type="button"
@@ -66,7 +90,7 @@ export default function LayerDock({
                 onClick={() => onToggleLayer("tectonic")}
               >
                 <TectonicIcon size={14} />
-                <span>지각판</span>
+                <span>{isEn ? "Plates" : "지각판"}</span>
               </button>
               <button
                 type="button"
@@ -74,7 +98,7 @@ export default function LayerDock({
                 onClick={() => onToggleLayer("clouds")}
               >
                 <Cloud size={14} />
-                <span>구름층</span>
+                <span>{isEn ? "Clouds" : "구름층"}</span>
               </button>
               <button
                 type="button"
@@ -82,7 +106,7 @@ export default function LayerDock({
                 onClick={() => onToggleLayer("labels")}
               >
                 <MapLabelIcon size={14} />
-                <span>지명</span>
+                <span>{isEn ? "Labels" : "지명"}</span>
               </button>
               <button
                 type="button"
@@ -90,19 +114,76 @@ export default function LayerDock({
                 onClick={() => onToggleLayer("dayNight")}
               >
                 <DayNightIcon size={14} active={layers.dayNight} />
-                <span>주야간</span>
+                <span>{isEn ? "Day/Night" : "주야간"}</span>
               </button>
             </div>
           </div>
 
           <div className="popover-section">
-            <div className="popover-label">지진 수집 기간 (USGS)</div>
+            <div className="popover-label">
+              {isEn ? "Air Quality 3D Style & Filter" : "대기질 3D 표현 · 필터"}
+            </div>
+            <div className="segmented-row">
+              <button
+                type="button"
+                className={`seg-btn ${airDisplayMode === "pillar" ? "is-selected" : ""}`}
+                onClick={() => onChangeAirDisplayMode("pillar")}
+              >
+                {t.airModePillar}
+              </button>
+              <button
+                type="button"
+                className={`seg-btn ${airDisplayMode === "bubble" ? "is-selected" : ""}`}
+                onClick={() => onChangeAirDisplayMode("bubble")}
+              >
+                {t.airModeBubble}
+              </button>
+              <button
+                type="button"
+                className={`seg-btn ${badAirOnly ? "is-selected is-warn-seg" : ""}`}
+                onClick={onToggleBadAirOnly}
+              >
+                {t.badAirOnly}
+              </button>
+            </div>
+          </div>
+
+          <div className="popover-section">
+            <div className="popover-label">
+              {isEn ? "Hazard Categories (NASA EONET)" : "자연재해 유형 필터 (NASA EONET)"}
+            </div>
             <div className="segmented-row">
               {(
                 [
-                  ["hour", "1시간"],
-                  ["day", "24시간"],
-                  ["week", "7일"],
+                  ["wildfires", isEn ? "Wildfire" : "산불"],
+                  ["volcanoes", isEn ? "Volcano" : "화산"],
+                  ["severeStorms", isEn ? "Storm" : "태풍"],
+                  ["seaLakeIce", isEn ? "Iceberg" : "빙산"],
+                ] as Array<[DisasterCategory, string]>
+              ).map(([cat, label]) => (
+                <button
+                  key={cat}
+                  type="button"
+                  className={`seg-btn ${disasterCategories[cat] ? "is-selected" : ""}`}
+                  onClick={() => onToggleDisasterCategory(cat)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="popover-section">
+            <div className="popover-label">
+              {isEn ? "Quake Window & Min Magnitude" : "지진 수집 기간 · 최소 규모"}{" "}
+              <span className="mono">M {minMag.toFixed(1)}+</span>
+            </div>
+            <div className="segmented-row" style={{ marginBottom: 6 }}>
+              {(
+                [
+                  ["hour", isEn ? "1h" : "1시간"],
+                  ["day", isEn ? "24h" : "24시간"],
+                  ["week", isEn ? "7d" : "7일"],
                 ] as const
               ).map(([val, label]) => (
                 <button
@@ -114,12 +195,6 @@ export default function LayerDock({
                   {label}
                 </button>
               ))}
-            </div>
-          </div>
-
-          <div className="popover-section">
-            <div className="popover-label">
-              최소 지진 규모 <span className="mono">M {minMag.toFixed(1)}+</span>
             </div>
             <div className="segmented-row">
               {[1.5, 2.5, 4.0, 5.0].map((m) => (
@@ -137,7 +212,9 @@ export default function LayerDock({
 
           {savedPins.length > 0 && (
             <div className="popover-section">
-              <div className="popover-label">내 관심 지역 즐겨찾기</div>
+              <div className="popover-label">
+                {isEn ? "Pinned Locations" : "내 관심 지역 즐겨찾기"}
+              </div>
               <div className="jump-chips">
                 {savedPins.map((pin) => (
                   <button
@@ -158,7 +235,7 @@ export default function LayerDock({
           )}
 
           <div className="popover-section">
-            <div className="popover-label">빠른 권역 이동</div>
+            <div className="popover-label">{isEn ? "Quick Region Jump" : "빠른 권역 이동"}</div>
             <div className="jump-chips">
               {QUICK_JUMP_PRESETS.map((p) => (
                 <button
@@ -178,7 +255,7 @@ export default function LayerDock({
 
           <div className="legend-row">
             <div className="legend-group">
-              <span className="legend-title">지진</span>
+              <span className="legend-title">{t.quakes}</span>
               <span className="legend-swatch" style={{ background: "#fde047" }} />
               <span>2.5</span>
               <span className="legend-swatch" style={{ background: "#f97316" }} />
@@ -189,13 +266,13 @@ export default function LayerDock({
             <div className="legend-group">
               <span className="legend-title">PM2.5</span>
               <span className="legend-swatch" style={{ background: "#22c55e" }} />
-              <span>좋음</span>
+              <span>{isEn ? "Good" : "좋음"}</span>
               <span className="legend-swatch" style={{ background: "#eab308" }} />
-              <span>보통</span>
+              <span>{isEn ? "Mod" : "보통"}</span>
               <span className="legend-swatch" style={{ background: "#f97316" }} />
-              <span>나쁨</span>
+              <span>{isEn ? "Bad" : "나쁨"}</span>
               <span className="legend-swatch" style={{ background: "#ef4444" }} />
-              <span>매우나쁨</span>
+              <span>{isEn ? "Sev" : "매우나쁨"}</span>
             </div>
           </div>
         </div>
@@ -210,7 +287,7 @@ export default function LayerDock({
           aria-pressed={layers.earthquakes}
         >
           <QuakeIcon size={18} />
-          <span className="dock-text">지진</span>
+          <span className="dock-text">{t.quakes}</span>
           <span className="dock-count mono">{quakeCount}</span>
         </button>
 
@@ -222,7 +299,7 @@ export default function LayerDock({
           aria-pressed={layers.disasters}
         >
           <DisasterHazardIcon size={18} />
-          <span className="dock-text">재해</span>
+          <span className="dock-text">{t.disasters}</span>
           <span className="dock-count mono">{disasterCount}</span>
         </button>
 
@@ -234,7 +311,7 @@ export default function LayerDock({
           aria-pressed={layers.weather}
         >
           <WeatherIcon size={18} />
-          <span className="dock-text">기상</span>
+          <span className="dock-text">{t.weather}</span>
           <span className="dock-count mono">{weatherCount}</span>
         </button>
 
@@ -246,7 +323,7 @@ export default function LayerDock({
           aria-pressed={layers.ocean}
         >
           <OceanWaveIcon size={18} />
-          <span className="dock-text">해양</span>
+          <span className="dock-text">{t.ocean}</span>
           <span className="dock-count mono">{oceanCount}</span>
         </button>
 
@@ -258,7 +335,7 @@ export default function LayerDock({
           aria-pressed={layers.airQuality}
         >
           <AirDustIcon size={18} />
-          <span className="dock-text">대기질</span>
+          <span className="dock-text">{t.air}</span>
           <span className="dock-count mono">{airClusterCount}</span>
         </button>
 

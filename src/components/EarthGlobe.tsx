@@ -3,8 +3,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { createEarthAssets } from "@/lib/earthTexture";
+import { createEarthAssets, createQuickEarthAssets } from "@/lib/earthTexture";
 import { buildTectonicPlateGeometry } from "@/lib/tectonicPlates";
+import { UI_TEXT, type Lang } from "@/lib/i18n";
 import {
   classifyAqiIcon,
   classifyDisasterIcon,
@@ -42,6 +43,8 @@ interface EarthGlobeProps {
   ocean: OceanNode[];
   airQuality: AirQualityCluster[];
   layers: LayerVisibility;
+  airDisplayMode: "pillar" | "bubble";
+  lang: Lang;
   selected: SelectedItem | null;
   flyToTarget: { lat: number; lng: number; altitude?: number; nonce: number } | null;
   zoomCommand: ZoomCommand | null;
@@ -211,6 +214,61 @@ const ATMOSPHERE_FRAGMENT_SHADER = /* glsl */ `
   }
 `;
 
+const CLOUD_VERTEX_SHADER = /* glsl */ `
+  varying vec2 vUv;
+  varying vec3 vWorldNormal;
+  void main() {
+    vUv = uv;
+    vWorldNormal = normalize(mat3(modelMatrix) * normal);
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const CLOUD_FRAGMENT_SHADER = /* glsl */ `
+  uniform sampler2D uCloudMap;
+  uniform vec3 uSunDir;
+  uniform float uDayNightMix;
+  varying vec2 vUv;
+  varying vec3 vWorldNormal;
+  void main() {
+    vec4 tex = texture2D(uCloudMap, vUv);
+    if (tex.a < 0.02) discard;
+    float ndotl = dot(normalize(vWorldNormal), normalize(uSunDir));
+    float dayFactor = smoothstep(-0.18, 0.25, ndotl);
+    float twilight = exp(-pow((ndotl - 0.02) * 7.5, 2.0));
+    vec3 litCloud = mix(vec3(0.14, 0.20, 0.30), vec3(0.95, 0.98, 1.0), dayFactor);
+    litCloud += vec3(0.45, 0.24, 0.14) * twilight * 0.38;
+    vec3 finalCol = mix(vec3(0.90, 0.95, 1.0), litCloud, uDayNightMix);
+    float alpha = tex.a * mix(0.44, mix(0.14, 0.46, dayFactor), uDayNightMix);
+    gl_FragColor = vec4(finalCol, alpha);
+  }
+`;
+
+const AIR_PILLAR_VERTEX_SHADER = /* glsl */ `
+  varying float vHeight;
+  varying vec3 vColor;
+  void main() {
+    vHeight = clamp(position.y, 0.0, 1.0);
+    #ifdef USE_INSTANCING_COLOR
+      vColor = instanceColor;
+    #else
+      vColor = vec3(1.0);
+    #endif
+    vec4 mvPos = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+    gl_Position = projectionMatrix * mvPos;
+  }
+`;
+
+const AIR_PILLAR_FRAGMENT_SHADER = /* glsl */ `
+  varying float vHeight;
+  varying vec3 vColor;
+  void main() {
+    float alpha = mix(0.22, 0.94, pow(vHeight, 0.65));
+    vec3 col = mix(vColor * 0.72, vColor * 1.18 + vec3(0.10), pow(vHeight, 1.5));
+    gl_FragColor = vec4(col, alpha);
+  }
+`;
+
 function createStarSpriteTexture(): THREE.CanvasTexture {
   const c = document.createElement("canvas");
   c.width = 64;
@@ -228,12 +286,39 @@ function createStarSpriteTexture(): THREE.CanvasTexture {
   return tex;
 }
 
+function createWindDropSpriteTexture(): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = 64;
+  c.height = 64;
+  const ctx = c.getContext("2d")!;
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 30);
+  g.addColorStop(0, "rgba(255,255,255,1)");
+  g.addColorStop(0.32, "rgba(186,230,253,0.92)");
+  g.addColorStop(0.68, "rgba(56,189,248,0.28)");
+  g.addColorStop(1, "rgba(56,189,248,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
+  const tex = new THREE.CanvasTexture(c);
+  tex.needsUpdate = true;
+  return tex;
+}
+
 function offsetLatLng(lat: number, lng: number, bearingDeg: number, distDeg: number): [number, number] {
   const rad = bearingDeg * DEG2RAD;
   const dLat = Math.cos(rad) * distDeg;
   const cosLat = Math.max(0.25, Math.cos(lat * DEG2RAD));
   const dLng = (Math.sin(rad) * distDeg) / cosLat;
   return [Math.max(-85, Math.min(85, lat + dLat)), lng + dLng];
+}
+
+interface AirInstanceMeta {
+  pos: THREE.Vector3;
+  quat: THREE.Quaternion;
+  normal: THREE.Vector3;
+  baseWidth: number;
+  baseHeight: number;
+  mode: "pillar" | "bubble";
+  badgeSprite?: THREE.Sprite;
 }
 
 export default function EarthGlobe({
@@ -243,6 +328,8 @@ export default function EarthGlobe({
   ocean,
   airQuality,
   layers,
+  airDisplayMode,
+  lang,
   selected,
   flyToTarget,
   zoomCommand,
@@ -253,6 +340,7 @@ export default function EarthGlobe({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const labelsLayerRef = useRef<HTMLDivElement | null>(null);
   const [tooltip, setTooltip] = useState<HoverTooltip | null>(null);
+  const [contextLost, setContextLost] = useState(false);
 
   const dataRef = useRef({ earthquakes, disasters, weather, ocean, airQuality, layers });
   useEffect(() => {
@@ -277,7 +365,9 @@ export default function EarthGlobe({
 
   const sceneHandlesRef = useRef<{
     iconAtlas?: GlobeIconAtlas;
+    windDropSprite?: THREE.CanvasTexture;
     earthMat?: THREE.ShaderMaterial;
+    cloudMat?: THREE.ShaderMaterial;
     cloudMesh?: THREE.Mesh;
     tectonicLines?: THREE.LineSegments;
     coastMat?: THREE.LineBasicMaterial;
@@ -298,6 +388,8 @@ export default function EarthGlobe({
     oceanStreamGroup?: THREE.Group;
     airGroup?: THREE.Group;
     airMesh?: THREE.InstancedMesh;
+    airInstances?: AirInstanceMeta[];
+    lastAirScale?: number;
     airBadgeSprites?: ScalableSprite[];
     reticleGroup?: THREE.Group;
     flyAnim?: {
@@ -315,6 +407,7 @@ export default function EarthGlobe({
       ends: THREE.Vector3[];
       speeds: number[];
       phases: Float32Array;
+      trailCount: number;
     };
   }>({});
 
@@ -413,8 +506,9 @@ export default function EarthGlobe({
     controls.autoRotate = dataRef.current.layers.autoRotate;
     controls.autoRotateSpeed = 0.32;
 
-    // GPU-cached Retina icon sprites
+    // GPU-cached Retina icon sprites & soft circular wind particle sprite
     const iconAtlas = createGlobeIconAtlas();
+    const windDropSprite = createWindDropSpriteTexture();
 
     // Multi-temperature luminous starfield
     const starCount = isMobile ? 1200 : 2400;
@@ -458,10 +552,11 @@ export default function EarthGlobe({
     });
     scene.add(new THREE.Points(starGeo, starMat));
 
-    // High-precision 50m Earth assets
-    const assets = createEarthAssets(isMobile);
+    // Stage 1: Instant (<25ms) 50m Earth base, followed asynchronously by Stage 2 HD 4K topography
+    let activeAssets = createQuickEarthAssets();
     const sunPt = getSubsolarPoint();
     const [sx, sy, sz] = latLngToVector3(sunPt.lat, sunPt.lng, 1);
+    const sunVec = new THREE.Vector3(sx, sy, sz).normalize();
 
     const earthGeo = new THREE.SphereGeometry(
       EARTH_RADIUS,
@@ -472,11 +567,11 @@ export default function EarthGlobe({
       vertexShader: EARTH_VERTEX_SHADER,
       fragmentShader: EARTH_FRAGMENT_SHADER,
       uniforms: {
-        uDayMap: { value: assets.dayMap },
-        uNightMap: { value: assets.nightMap },
-        uSpecularMap: { value: assets.specularMap },
-        uBumpMap: { value: assets.bumpMap },
-        uSunDir: { value: new THREE.Vector3(sx, sy, sz).normalize() },
+        uDayMap: { value: activeAssets.dayMap },
+        uNightMap: { value: activeAssets.nightMap },
+        uSpecularMap: { value: activeAssets.specularMap },
+        uBumpMap: { value: activeAssets.bumpMap },
+        uSunDir: { value: sunVec.clone() },
         uDayNightMix: { value: dataRef.current.layers.dayNight ? 1.0 : 0.0 },
       },
     });
@@ -489,7 +584,8 @@ export default function EarthGlobe({
       opacity: 0.08,
       depthWrite: false,
     });
-    scene.add(new THREE.LineSegments(assets.graticuleGeometry, graticuleMat));
+    const graticuleLine = new THREE.LineSegments(activeAssets.graticuleGeometry, graticuleMat);
+    scene.add(graticuleLine);
 
     const coastMat = new THREE.LineBasicMaterial({
       color: 0x7dd3fc,
@@ -497,7 +593,8 @@ export default function EarthGlobe({
       opacity: 0.28,
       depthWrite: false,
     });
-    scene.add(new THREE.LineSegments(assets.coastlineGeometry, coastMat));
+    const coastLine = new THREE.LineSegments(activeAssets.coastlineGeometry, coastMat);
+    scene.add(coastLine);
 
     const borderMat = new THREE.LineBasicMaterial({
       color: 0xcbd5e1,
@@ -505,7 +602,8 @@ export default function EarthGlobe({
       opacity: 0.2,
       depthWrite: false,
     });
-    scene.add(new THREE.LineSegments(assets.borderGeometry, borderMat));
+    const borderLine = new THREE.LineSegments(activeAssets.borderGeometry, borderMat);
+    scene.add(borderLine);
 
     // Tectonic Plate Boundaries 3D vector overlay (Ring of Fire, Mid-Atlantic Ridge, Alpine-Himalayan belt)
     const tectonicGeo = buildTectonicPlateGeometry(EARTH_RADIUS + 0.0024);
@@ -524,15 +622,66 @@ export default function EarthGlobe({
       isMobile ? 48 : 64,
       isMobile ? 48 : 64
     );
-    const cloudMat = new THREE.MeshBasicMaterial({
-      map: assets.cloudMap,
+    const cloudMat = new THREE.ShaderMaterial({
+      vertexShader: CLOUD_VERTEX_SHADER,
+      fragmentShader: CLOUD_FRAGMENT_SHADER,
+      uniforms: {
+        uCloudMap: { value: activeAssets.cloudMap },
+        uSunDir: { value: sunVec.clone() },
+        uDayNightMix: { value: dataRef.current.layers.dayNight ? 1.0 : 0.0 },
+      },
       transparent: true,
-      opacity: 0.4,
       depthWrite: false,
     });
     const cloudMesh = new THREE.Mesh(cloudGeo, cloudMat);
     cloudMesh.visible = dataRef.current.layers.clouds;
     scene.add(cloudMesh);
+
+    // Stage 2: Upgrade to full high-detail topographic relief & cloud texture asynchronously
+    let disposed = false;
+    const upgradeToHdTextures = () => {
+      if (disposed) return;
+      try {
+        const hdAssets = createEarthAssets(isMobile);
+        if (disposed) {
+          hdAssets.dispose();
+          return;
+        }
+        const prev = activeAssets;
+        activeAssets = hdAssets;
+        earthMat.uniforms.uDayMap.value = hdAssets.dayMap;
+        earthMat.uniforms.uNightMap.value = hdAssets.nightMap;
+        earthMat.uniforms.uSpecularMap.value = hdAssets.specularMap;
+        earthMat.uniforms.uBumpMap.value = hdAssets.bumpMap;
+        cloudMat.uniforms.uCloudMap.value = hdAssets.cloudMap;
+        graticuleLine.geometry = hdAssets.graticuleGeometry;
+        coastLine.geometry = hdAssets.coastlineGeometry;
+        borderLine.geometry = hdAssets.borderGeometry;
+        prev.dispose();
+      } catch {
+        // Keep Stage 1 assets safely if HD generation fails
+      }
+    };
+
+    let idleHandle: number | null = null;
+    let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      idleHandle = (
+        window as Window & {
+          requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => number;
+        }
+      ).requestIdleCallback(upgradeToHdTextures, { timeout: 600 });
+    } else {
+      fallbackTimer = setTimeout(upgradeToHdTextures, 80);
+    }
+
+    // Live solar terminator update every 60 seconds
+    const sunTimer = setInterval(() => {
+      const sp = getSubsolarPoint();
+      const [nx, ny, nz] = latLngToVector3(sp.lat, sp.lng, 1);
+      earthMat.uniforms.uSunDir.value.set(nx, ny, nz).normalize();
+      cloudMat.uniforms.uSunDir.value.set(nx, ny, nz).normalize();
+    }, 60_000);
 
     const atmoGeo = new THREE.SphereGeometry(EARTH_RADIUS * 1.125, 56, 56);
     const atmoMat = new THREE.ShaderMaterial({
@@ -595,7 +744,9 @@ export default function EarthGlobe({
 
     sceneHandlesRef.current = {
       iconAtlas,
+      windDropSprite,
       earthMat,
+      cloudMat,
       cloudMesh,
       tectonicLines,
       coastMat,
@@ -831,12 +982,22 @@ export default function EarthGlobe({
       setTooltip(null);
     };
 
+    const handleContextLost = (e: Event) => {
+      e.preventDefault();
+      setContextLost(true);
+    };
+    const handleContextRestored = () => {
+      setContextLost(false);
+    };
+
     renderer.domElement.addEventListener("pointerdown", handlePointerDown);
     renderer.domElement.addEventListener("pointerup", handlePointerUp);
     renderer.domElement.addEventListener("pointermove", handlePointerMove);
     renderer.domElement.addEventListener("pointerleave", handlePointerLeave);
     renderer.domElement.addEventListener("dblclick", handleDoubleClick);
     renderer.domElement.addEventListener("wheel", handleWheel, { passive: true });
+    renderer.domElement.addEventListener("webglcontextlost", handleContextLost, false);
+    renderer.domElement.addEventListener("webglcontextrestored", handleContextRestored, false);
 
     const resizeObserver = new ResizeObserver(() => {
       if (!container) return;
@@ -852,6 +1013,8 @@ export default function EarthGlobe({
     const clock = new THREE.Clock();
     const projVec = new THREE.Vector3();
     const camDir = new THREE.Vector3();
+    const airDummy = new THREE.Object3D();
+    const windTmp = new THREE.Vector3();
     let lastTelemetryTime = 0;
     let lastLabelTime = 0;
 
@@ -1019,6 +1182,36 @@ export default function EarthGlobe({
       if (h.oceanGroup?.visible) scaleSpriteList(h.oceanSprites);
       if (h.airGroup?.visible) scaleSpriteList(h.airBadgeSprites);
 
+      // Altitude-adaptive PM2.5 pillar/bubble scaling for ultra-crisp dense regional readability
+      if (h.airGroup?.visible && h.airMesh && h.airInstances && h.airInstances.length > 0) {
+        const airScale = Math.max(0.32, Math.min(1.0, (camDist - 0.92) / 1.65));
+        if (h.lastAirScale === undefined || Math.abs(airScale - h.lastAirScale) > 0.015) {
+          h.lastAirScale = airScale;
+          const wScale = 0.44 + airScale * 0.56;
+          const hScale = 0.28 + airScale * 0.72;
+          for (let i = 0; i < h.airInstances.length; i++) {
+            const meta = h.airInstances[i];
+            airDummy.position.copy(meta.pos);
+            airDummy.quaternion.copy(meta.quat);
+            if (meta.mode === "bubble") {
+              const bs = meta.baseWidth * (0.48 + airScale * 0.52);
+              airDummy.scale.set(bs, bs, bs);
+            } else {
+              const effH = meta.baseHeight * hScale;
+              airDummy.scale.set(meta.baseWidth * wScale, effH, meta.baseWidth * wScale);
+              if (meta.badgeSprite) {
+                meta.badgeSprite.position
+                  .copy(meta.normal)
+                  .multiplyScalar(EARTH_RADIUS + effH + 0.011 * spriteScale);
+              }
+            }
+            airDummy.updateMatrix();
+            h.airMesh.setMatrixAt(i, airDummy.matrix);
+          }
+          h.airMesh.instanceMatrix.needsUpdate = true;
+        }
+      }
+
       if (h.pulseRings && h.quakeGroup?.visible) {
         for (const ring of h.pulseRings) {
           const t = (elapsed * 0.55 + ring.phase) % 1;
@@ -1030,16 +1223,23 @@ export default function EarthGlobe({
       }
 
       if (h.windParticles && h.windStreamGroup?.visible) {
-        const { geo, starts, ends, speeds, phases } = h.windParticles;
+        const { geo, starts, ends, speeds, phases, trailCount } = h.windParticles;
         const posAttr = geo.getAttribute("position") as THREE.BufferAttribute;
         const arr = posAttr.array as Float32Array;
-        const tmp = new THREE.Vector3();
         for (let i = 0; i < starts.length; i++) {
           phases[i] = (phases[i] + dt * speeds[i]) % 1;
-          tmp.copy(starts[i]).lerp(ends[i], phases[i]).normalize().multiplyScalar(EARTH_RADIUS + 0.015);
-          arr[i * 3] = tmp.x;
-          arr[i * 3 + 1] = tmp.y;
-          arr[i * 3 + 2] = tmp.z;
+          for (let t = 0; t < trailCount; t++) {
+            const ptPhase = Math.max(0, phases[i] - t * 0.075);
+            windTmp
+              .copy(starts[i])
+              .lerp(ends[i], ptPhase)
+              .normalize()
+              .multiplyScalar(EARTH_RADIUS + 0.0155);
+            const idx3 = (i * trailCount + t) * 3;
+            arr[idx3] = windTmp.x;
+            arr[idx3 + 1] = windTmp.y;
+            arr[idx3 + 2] = windTmp.z;
+          }
         }
         posAttr.needsUpdate = true;
       }
@@ -1075,6 +1275,14 @@ export default function EarthGlobe({
     animate();
 
     return () => {
+      disposed = true;
+      if (idleHandle !== null && "cancelIdleCallback" in window) {
+        (window as Window & { cancelIdleCallback: (id: number) => void }).cancelIdleCallback(
+          idleHandle
+        );
+      }
+      if (fallbackTimer !== null) clearTimeout(fallbackTimer);
+      clearInterval(sunTimer);
       captureRef.current = null;
       cancelAnimationFrame(rafId);
       resizeObserver.disconnect();
@@ -1084,9 +1292,12 @@ export default function EarthGlobe({
       renderer.domElement.removeEventListener("pointerleave", handlePointerLeave);
       renderer.domElement.removeEventListener("dblclick", handleDoubleClick);
       renderer.domElement.removeEventListener("wheel", handleWheel);
+      renderer.domElement.removeEventListener("webglcontextlost", handleContextLost);
+      renderer.domElement.removeEventListener("webglcontextrestored", handleContextRestored);
       controls.dispose();
       iconAtlas.dispose();
-      assets.dispose();
+      windDropSprite.dispose();
+      activeAssets.dispose();
       tectonicGeo.dispose();
       tectonicMat.dispose();
       earthGeo.dispose();
@@ -1116,6 +1327,7 @@ export default function EarthGlobe({
   useEffect(() => {
     const h = sceneHandlesRef.current;
     if (h.earthMat) h.earthMat.uniforms.uDayNightMix.value = layers.dayNight ? 1.0 : 0.0;
+    if (h.cloudMat) h.cloudMat.uniforms.uDayNightMix.value = layers.dayNight ? 1.0 : 0.0;
     if (h.cloudMesh) h.cloudMesh.visible = layers.clouds;
     if (h.tectonicLines) h.tectonicLines.visible = layers.tectonic;
     if (h.controls) h.controls.autoRotate = layers.autoRotate;
@@ -1362,28 +1574,46 @@ export default function EarthGlobe({
       )
     );
 
-    const partPositions = new Float32Array(starts.length * 3);
+    const trailCount = 3;
+    const totalPts = starts.length * trailCount;
+    const partPositions = new Float32Array(totalPts * 3);
+    const partColors = new Float32Array(totalPts * 3);
     const phases = new Float32Array(starts.length);
+    const headCol = new THREE.Color("#f0f9ff");
+    const midCol = new THREE.Color("#7dd3fc");
+    const tailCol = new THREE.Color("#0284c7");
+
     for (let i = 0; i < starts.length; i++) {
       phases[i] = (i * 0.37) % 1;
+      const cols = [headCol, midCol, tailCol];
+      for (let t = 0; t < trailCount; t++) {
+        const c = cols[t];
+        const fade = t === 0 ? 1.0 : t === 1 ? 0.68 : 0.34;
+        const idx3 = (i * trailCount + t) * 3;
+        partColors[idx3] = c.r * fade;
+        partColors[idx3 + 1] = c.g * fade;
+        partColors[idx3 + 2] = c.b * fade;
+      }
     }
     const partGeo = new THREE.BufferGeometry();
     partGeo.setAttribute("position", new THREE.BufferAttribute(partPositions, 3));
+    partGeo.setAttribute("color", new THREE.BufferAttribute(partColors, 3));
     streamGroup.add(
       new THREE.Points(
         partGeo,
         new THREE.PointsMaterial({
-          color: 0xe0f2fe,
-          size: 0.02,
+          map: h.windDropSprite,
+          vertexColors: true,
+          size: 0.032,
           transparent: true,
-          opacity: 0.9,
+          opacity: 0.94,
           blending: THREE.AdditiveBlending,
           depthWrite: false,
           sizeAttenuation: true,
         })
       )
     );
-    h.windParticles = { geo: partGeo, starts, ends, speeds, phases };
+    h.windParticles = { geo: partGeo, starts, ends, speeds, phases, trailCount };
   }, [weather]);
 
   // 5. Rebuild Ocean Wave Crest Icon Sprites + Current Vectors
@@ -1449,7 +1679,7 @@ export default function EarthGlobe({
     );
   }, [ocean]);
 
-  // 6. Rebuild Air Quality 3D Pillars + Intuitive AQI Face Badges on Zoom-In (Korea & Severe Hotspots)
+  // 6. Rebuild Air Quality 3D Pillars (Vertical Alpha-Gradient) / Compact Bubbles + AQI Badges
   useEffect(() => {
     const h = sceneHandlesRef.current;
     const group = h.airGroup;
@@ -1468,44 +1698,71 @@ export default function EarthGlobe({
       }
     }
     h.airMesh = undefined;
+    h.airInstances = [];
+    h.lastAirScale = undefined;
     h.airBadgeSprites = [];
 
     if (airQuality.length === 0) return;
 
-    const barGeo = new THREE.CylinderGeometry(0.0038, 0.005, 1, 6);
-    barGeo.translate(0, 0.5, 0);
-    const barMat = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.88,
-    });
-    const inst = new THREE.InstancedMesh(barGeo, barMat, airQuality.length);
+    const isBubble = airDisplayMode === "bubble";
+    const geo = isBubble
+      ? new THREE.SphereGeometry(0.0068, 10, 8)
+      : (() => {
+          const g = new THREE.CylinderGeometry(0.0028, 0.0044, 1, 6);
+          g.translate(0, 0.5, 0);
+          return g;
+        })();
+
+    const mat = isBubble
+      ? new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.9,
+        })
+      : new THREE.ShaderMaterial({
+          vertexShader: AIR_PILLAR_VERTEX_SHADER,
+          fragmentShader: AIR_PILLAR_FRAGMENT_SHADER,
+          transparent: true,
+          depthWrite: false,
+        });
+
+    const inst = new THREE.InstancedMesh(geo, mat, airQuality.length);
     const dummy = new THREE.Object3D();
     const up = new THREE.Vector3(0, 1, 0);
     const color = new THREE.Color();
+    const metas: AirInstanceMeta[] = [];
 
     airQuality.forEach((cluster, idx) => {
-      const [x, y, z] = latLngToVector3(cluster.lat, cluster.lng, EARTH_RADIUS + 0.002);
-      const normal = new THREE.Vector3(x, y, z).normalize();
-      const barHeight = Math.min(0.15, Math.max(0.013, 0.012 + Math.sqrt(cluster.pm25) * 0.011));
-      const widthBoost =
-        cluster.country === "KR"
-          ? 0.82
-          : Math.min(1.5, 0.92 + Math.log10(Math.max(1, cluster.sensorCount)) * 0.24);
+      const surfaceElev = isBubble ? 0.0075 : 0.002;
+      const [x, y, z] = latLngToVector3(cluster.lat, cluster.lng, EARTH_RADIUS + surfaceElev);
+      const pos = new THREE.Vector3(x, y, z);
+      const normal = pos.clone().normalize();
+      const quat = new THREE.Quaternion().setFromUnitVectors(up, normal);
 
-      dummy.position.set(x, y, z);
-      dummy.quaternion.setFromUnitVectors(up, normal);
-      dummy.scale.set(widthBoost, barHeight, widthBoost);
+      const barHeight = Math.min(0.115, Math.max(0.012, 0.011 + Math.sqrt(cluster.pm25) * 0.0085));
+      const widthBoost = isBubble
+        ? Math.min(1.65, 0.72 + Math.sqrt(cluster.pm25) * 0.085)
+        : cluster.country === "KR"
+          ? 0.78
+          : Math.min(1.28, 0.78 + Math.log10(Math.max(1, cluster.sensorCount)) * 0.18);
+
+      dummy.position.copy(pos);
+      dummy.quaternion.copy(quat);
+      if (isBubble) {
+        dummy.scale.set(widthBoost, widthBoost, widthBoost);
+      } else {
+        dummy.scale.set(widthBoost, barHeight, widthBoost);
+      }
       dummy.updateMatrix();
       inst.setMatrixAt(idx, dummy.matrix);
 
       color.set(getPm25Level(cluster.pm25).color);
       inst.setColorAt(idx, color);
 
-      // Show intuitive AQI mood badge sprite on Korean stations (visible when zoomed into Korea)
-      // and on top severe global pollution hotspots!
+      let badgeSprite: THREE.Sprite | undefined;
       if (cluster.country === "KR" || cluster.pm25 >= 75) {
-        const topPos = normal.clone().multiplyScalar(EARTH_RADIUS + barHeight + 0.012);
+        const badgeElev = isBubble ? 0.022 : barHeight + 0.012;
+        const topPos = normal.clone().multiplyScalar(EARTH_RADIUS + badgeElev);
         const aqiKey = classifyAqiIcon(cluster.pm25);
         const sMat = new THREE.SpriteMaterial({
           map: atlas.aqi[aqiKey],
@@ -1514,23 +1771,35 @@ export default function EarthGlobe({
         });
         const badge = new THREE.Sprite(sMat);
         badge.position.copy(topPos);
-        const baseScale = cluster.country === "KR" ? 0.042 : 0.048;
+        const baseScale = cluster.country === "KR" ? 0.04 : 0.046;
         badge.scale.set(baseScale, baseScale, 1);
         badge.userData = { kind: "air", index: idx };
         group.add(badge);
+        badgeSprite = badge;
         h.airBadgeSprites!.push({
           sprite: badge,
           baseScale,
           maxDist: cluster.country === "KR" ? 1.85 : 3.2,
         });
       }
+
+      metas.push({
+        pos,
+        quat,
+        normal,
+        baseWidth: widthBoost,
+        baseHeight: barHeight,
+        mode: airDisplayMode,
+        badgeSprite,
+      });
     });
 
     inst.instanceMatrix.needsUpdate = true;
     if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
     group.add(inst);
     h.airMesh = inst;
-  }, [airQuality]);
+    h.airInstances = metas;
+  }, [airQuality, airDisplayMode]);
 
   // 7. Selection reticle
   useEffect(() => {
@@ -1593,9 +1862,26 @@ export default function EarthGlobe({
     }
   }, [zoomCommand]);
 
+  const t = UI_TEXT[lang];
+
   return (
     <div className="globe-stage" ref={containerRef} aria-label="실시간 3D 지구본 모니터링 캔버스">
       <div className="globe-labels-layer" ref={labelsLayerRef} aria-hidden="true" />
+      {contextLost && (
+        <div className="webgl-lost-overlay" role="alert">
+          <div className="webgl-lost-card">
+            <h3>{t.webglLostTitle}</h3>
+            <p>{t.webglLostDesc}</p>
+            <button
+              type="button"
+              className="webgl-restore-btn"
+              onClick={() => window.location.reload()}
+            >
+              {t.webglRestoreBtn}
+            </button>
+          </div>
+        </div>
+      )}
       {tooltip && (
         <div
           className="globe-tooltip"

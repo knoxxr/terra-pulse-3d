@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildCdnHeaders, cachedFetch } from "@/lib/cache";
+import { checkRateLimit } from "@/lib/rateLimit";
 import type { ApiEnvelope, PointInspectData } from "@/types/telemetry";
 
 export const runtime = "nodejs";
@@ -53,6 +54,21 @@ async function fetchJsonSafe<T>(url: string, timeoutMs = 8000): Promise<T | null
 }
 
 export async function GET(request: NextRequest) {
+  const ip =
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip") ||
+    "anonymous";
+  const rl = checkRateLimit(ip, 80, 60_000);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: "Too many inspect requests. Please retry shortly." },
+      {
+        status: 429,
+        headers: { "Retry-After": String(rl.retryAfterSec) },
+      }
+    );
+  }
+
   const { searchParams } = new URL(request.url);
   const rawLat = Number(searchParams.get("lat"));
   const rawLng = Number(searchParams.get("lng"));
@@ -166,6 +182,6 @@ export async function GET(request: NextRequest) {
   };
 
   return NextResponse.json(envelope, {
-    headers: buildCdnHeaders(ttlSeconds, staleSeconds),
+    headers: buildCdnHeaders(ttlSeconds, staleSeconds, result.status),
   });
 }

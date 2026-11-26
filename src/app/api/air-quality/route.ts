@@ -323,6 +323,6 @@ export async function GET() {
   };
 
   return NextResponse.json(envelope, {
-    headers: buildCdnHeaders(ttlSeconds, staleSeconds),
+    headers: buildCdnHeaders(ttlSeconds, staleSeconds, envelope.meta.status),
   });
 }

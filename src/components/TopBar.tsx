@@ -8,6 +8,7 @@ import {
   GLOBAL_WEATHER_ANCHORS,
   QUICK_JUMP_PRESETS,
 } from "@/lib/locations";
+import { UI_TEXT, type Lang } from "@/lib/i18n";
 import type { DataSourceStatus } from "@/types/telemetry";
 
 interface SearchCandidate {
@@ -24,6 +25,8 @@ interface TopBarProps {
   totalRawSensors: number;
   overallStatus: DataSourceStatus;
   feedOpen: boolean;
+  lang: Lang;
+  onToggleLang: () => void;
   onToggleFeed: () => void;
   onOpenArchitecture: () => void;
   onSelectLocation: (lat: number, lng: number, label: string, altitude?: number) => void;
@@ -61,6 +64,8 @@ export default function TopBar({
   totalRawSensors,
   overallStatus,
   feedOpen,
+  lang,
+  onToggleLang,
   onToggleFeed,
   onOpenArchitecture,
   onSelectLocation,
@@ -68,6 +73,7 @@ export default function TopBar({
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const t = UI_TEXT[lang];
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -123,7 +129,7 @@ export default function TopBar({
           </div>
           <div className="brand-copy">
             <h1 className="brand-title">TerraPulse 3D</h1>
-            <span className="brand-sub">실시간 지구 환경 · 재해 관측</span>
+            <span className="brand-sub">{t.subtitle}</span>
           </div>
         </div>
 
@@ -138,7 +144,8 @@ export default function TopBar({
           <span className="mono">{statusText}</span>
           <span className="status-divider" />
           <span className="status-metric mono">
-            지진 {totalEarthquakes} · 센서 {(totalRawSensors / 1000).toFixed(1)}k
+            {lang === "en" ? "Quakes" : "지진"} {totalEarthquakes} ·{" "}
+            {lang === "en" ? "Sensors" : "센서"} {(totalRawSensors / 1000).toFixed(1)}k
           </span>
           <Info size={13} />
         </button>
@@ -164,8 +171,8 @@ export default function TopBar({
                   inputRef.current?.blur();
                 }
               }}
-              placeholder="도시 · 해역 · 위경도 검색 (예: 서울, 도쿄, 35.6, 139.7)"
-              aria-label="도시, 해역 또는 좌표 검색"
+              placeholder={t.searchPlaceholder}
+              aria-label={t.searchPlaceholder}
               autoComplete="off"
             />
             {query && (
@@ -202,6 +209,17 @@ export default function TopBar({
         </div>
 
         <button
+          id="btn-toggle-lang"
+          type="button"
+          className="lang-toggle-btn mono"
+          onClick={onToggleLang}
+          title={lang === "ko" ? "Switch to English" : "한국어로 전환"}
+          aria-label={lang === "ko" ? "Switch to English" : "한국어로 전환"}
+        >
+          {lang === "ko" ? "EN" : "KO"}
+        </button>
+
+        <button
           id="btn-toggle-feed"
           type="button"
           className={`hud-action-btn ${feedOpen ? "is-active" : ""}`}
@@ -209,7 +227,7 @@ export default function TopBar({
           aria-pressed={feedOpen}
         >
           <RadarAlertIcon size={17} />
-          <span className="btn-label-desktop">실시간 특보</span>
+          <span className="btn-label-desktop">{t.liveAlerts}</span>
         </button>
       </div>
     </header>

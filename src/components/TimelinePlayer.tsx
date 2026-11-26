@@ -2,6 +2,7 @@
 
 import React, { useEffect } from "react";
 import { FastForward, Pause, Play, RotateCcw, X } from "lucide-react";
+import { UI_TEXT, type Lang } from "@/lib/i18n";
 
 export type TimelineMode = "quakes" | "forecast";
 
@@ -15,6 +16,7 @@ interface TimelinePlayerProps {
   quakeCutoffMs: number;
   visibleQuakeCount: number;
   totalQuakeCount: number;
+  lang: Lang;
   onChangeMode: (m: TimelineMode) => void;
   onTogglePlay: () => void;
   onToggleSpeed: () => void;
@@ -25,7 +27,7 @@ interface TimelinePlayerProps {
 }
 
 function formatKstShort(epochMs: number): string {
-  if (!epochMs) return "수신 중...";
+  if (!epochMs) return "Loading...";
   const d = new Date(epochMs + 9 * 3600_000);
   return `${d.toISOString().slice(5, 10)} ${d.toISOString().slice(11, 16)} KST`;
 }
@@ -40,6 +42,7 @@ export default function TimelinePlayer({
   quakeCutoffMs,
   visibleQuakeCount,
   totalQuakeCount,
+  lang,
   onChangeMode,
   onTogglePlay,
   onToggleSpeed,
@@ -66,6 +69,7 @@ export default function TimelinePlayer({
 
   if (!open) return null;
 
+  const t = UI_TEXT[lang];
   const forecastHours = forecastIndex * 3;
 
   return (
@@ -77,14 +81,14 @@ export default function TimelinePlayer({
             className={`tl-tab ${mode === "quakes" ? "is-active" : ""}`}
             onClick={() => onChangeMode("quakes")}
           >
-            지진 리플레이
+            {t.timelineQuakes}
           </button>
           <button
             type="button"
             className={`tl-tab ${mode === "forecast" ? "is-active" : ""}`}
             onClick={() => onChangeMode("forecast")}
           >
-            +24h 기상 예보
+            {t.timelineForecast}
           </button>
         </div>
 
@@ -93,12 +97,21 @@ export default function TimelinePlayer({
             <>
               <span>{formatKstShort(quakeCutoffMs)}</span>
               <span className="tl-count">
-                {visibleQuakeCount}/{totalQuakeCount}건
+                {visibleQuakeCount}/{totalQuakeCount}
+                {lang === "en" ? "" : "건"}
               </span>
             </>
           ) : (
             <>
-              <span>{forecastHours === 0 ? "현재 실황" : `+${forecastHours}시간 후 예보`}</span>
+              <span>
+                {forecastHours === 0
+                  ? lang === "en"
+                    ? "Live Now"
+                    : "현재 실황"
+                  : lang === "en"
+                    ? `+${forecastHours}h Forecast`
+                    : `+${forecastHours}시간 후 예보`}
+              </span>
               <span className="tl-count">Open-Meteo</span>
             </>
           )}

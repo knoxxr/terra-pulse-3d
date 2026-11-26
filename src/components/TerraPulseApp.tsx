@@ -2,21 +2,26 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { AlertTriangle, X } from "lucide-react";
 import TopBar from "./TopBar";
 import LayerDock from "./LayerDock";
 import EventFeedDrawer from "./EventFeedDrawer";
 import InspectorPanel from "./InspectorPanel";
 import ArchitectureModal from "./ArchitectureModal";
+import CompareModal, { type CompareLocation } from "./CompareModal";
 import ZoomControls from "./ZoomControls";
 import TelemetryHud from "./TelemetryHud";
 import TimelinePlayer, { type TimelineMode } from "./TimelinePlayer";
 import { exportGlobeSnapshot } from "@/lib/snapshot";
 import { haversineKm } from "@/lib/geo";
+import type { Lang } from "@/lib/i18n";
+import type { KoreaAlertItem } from "@/app/api/korea-alerts/route";
 import type {
   AirQualityPayload,
   ApiEnvelope,
   CameraTelemetry,
   DataSourceStatus,
+  DisasterCategory,
   DisasterEvent,
   EarthquakeEvent,
   LayerVisibility,
@@ -83,11 +88,23 @@ export default function TerraPulseApp() {
     autoRotate: false,
   });
 
+  const [lang, setLang] = useState<Lang>("ko");
   const [quakeWindow, setQuakeWindow] = useState<QuakeWindow>("day");
   const [minMag, setMinMag] = useState<number>(2.5);
+  const [airDisplayMode, setAirDisplayMode] = useState<"pillar" | "bubble">("pillar");
+  const [badAirOnly, setBadAirOnly] = useState<boolean>(false);
+  const [disasterCategories, setDisasterCategories] = useState<Record<DisasterCategory, boolean>>({
+    wildfires: true,
+    volcanoes: true,
+    severeStorms: true,
+    seaLakeIce: true,
+    other: true,
+  });
 
   const [earthquakes, setEarthquakes] = useState<EarthquakeEvent[]>([]);
   const [disasters, setDisasters] = useState<DisasterEvent[]>([]);
+  const [koreaAlerts, setKoreaAlerts] = useState<KoreaAlertItem[]>([]);
+  const [alertDismissed, setAlertDismissed] = useState(false);
   const [weatherOcean, setWeatherOcean] = useState<WeatherOceanPayload>({
     weather: [],
     ocean: [],
@@ -134,8 +151,11 @@ export default function TerraPulseApp() {
   const [quakeReplayProgress, setQuakeReplayProgress] = useState(1);
   const [forecastIndex, setForecastIndex] = useState(0);
 
-  // Saved pins (localStorage), GPS & Snapshot UI state
+  // Saved pins (localStorage), Compare slots, GPS & Snapshot UI state
   const [savedPins, setSavedPins] = useState<SavedPin[]>(loadInitialPins);
+  const [compareA, setCompareA] = useState<CompareLocation | null>(null);
+  const [compareB, setCompareB] = useState<CompareLocation | null>(null);
+  const [compareOpen, setCompareOpen] = useState(false);
   const [locating, setLocating] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [toast, setToast] = useState<{ text: string; tone?: "info" | "warn" } | null>(null);
@@ -212,6 +232,7 @@ export default function TerraPulseApp() {
       } else if (e.key === "Escape") {
         setSelected(null);
         setArchOpen(false);
+        setCompareOpen(false);
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -315,6 +336,30 @@ export default function TerraPulseApp() {
     };
   }, []);
 
+  // Poll KMA Korea Weather Alerts (active when DATA_GO_KR_API_KEY is configured)
+  useEffect(() => {
+    let active = true;
+    const fetchKoreaAlerts = async () => {
+      try {
+        const res = await fetch("/api/korea-alerts");
+        if (!res.ok) return;
+        const json = (await res.json()) as ApiEnvelope<KoreaAlertItem[]>;
+        if (!active) return;
+        setKoreaAlerts(json.data);
+      } catch {
+        // Silent fallback
+      }
+    };
+    void fetchKoreaAlerts();
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") void fetchKoreaAlerts();
+    }, 600_000);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, []);
+
   // Threshold monitoring toast for user's saved favorite locations (zero-DB client check)
   useEffect(() => {
     if (alertShownRef.current || savedPins.length === 0) return;
@@ -391,8 +436,51 @@ export default function TerraPulseApp() {
     });
   }, [weatherOcean.weather, timelineOpen, timelineMode, forecastIndex]);
 
+  const displayedDisasters = useMemo(
+    () => disasters.filter((d) => disasterCategories[d.category] ?? true),
+    [disasters, disasterCategories]
+  );
+
+  const displayedAirClusters = useMemo(
+    () => (badAirOnly ? airQuality.clusters.filter((c) => c.pm25 >= 36) : airQuality.clusters),
+    [airQuality.clusters, badAirOnly]
+  );
+
   const handleToggleLayer = useCallback((key: keyof LayerVisibility) => {
     setLayers((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
+  const handleToggleDisasterCategory = useCallback((cat: DisasterCategory) => {
+    setDisasterCategories((prev) => ({ ...prev, [cat]: !prev[cat] }));
+  }, []);
+
+  const handleAddCompare = useCallback(
+    (label: string, lat: number, lng: number) => {
+      const loc: CompareLocation = { label: label.slice(0, 28), lat, lng };
+      if (!compareA) {
+        setCompareA(loc);
+        showToast(
+          lang === "en"
+            ? `Added [${loc.label}] to Compare A — pick a 2nd location`
+            : `비교 슬롯 A에 [${loc.label}] 담음 — 두 번째 지점을 선택하세요`
+        );
+      } else {
+        setCompareB(loc);
+        setCompareOpen(true);
+      }
+    },
+    [compareA, lang, showToast]
+  );
+
+  const handleSwapCompare = useCallback(() => {
+    setCompareA(compareB);
+    setCompareB(compareA);
+  }, [compareA, compareB]);
+
+  const handleClearCompare = useCallback(() => {
+    setCompareA(null);
+    setCompareB(null);
+    setCompareOpen(false);
   }, []);
 
   const handleSelectItem = useCallback(
@@ -559,15 +647,19 @@ export default function TerraPulseApp() {
     ];
   }, [quakeMeta, disasterMeta, weatherMeta, airMeta, airQuality]);
 
+  const compareCount = (compareA ? 1 : 0) + (compareB ? 1 : 0);
+
   return (
     <main className="app-shell">
       <EarthGlobe
         earthquakes={displayedEarthquakes}
-        disasters={disasters}
+        disasters={displayedDisasters}
         weather={displayedWeather}
         ocean={weatherOcean.ocean}
-        airQuality={airQuality.clusters}
+        airQuality={displayedAirClusters}
         layers={layers}
+        airDisplayMode={airDisplayMode}
+        lang={lang}
         selected={selected}
         flyToTarget={flyToTarget}
         zoomCommand={zoomCommand}
@@ -581,16 +673,37 @@ export default function TerraPulseApp() {
         totalRawSensors={airQuality.totalRawSensors}
         overallStatus={overallStatus}
         feedOpen={feedOpen}
+        lang={lang}
+        onToggleLang={() => setLang((prev) => (prev === "ko" ? "en" : "ko"))}
         onToggleFeed={() => setFeedOpen((v) => !v)}
         onOpenArchitecture={() => setArchOpen(true)}
         onSelectLocation={handleSearchLocation}
       />
 
+      {koreaAlerts.length > 0 && !alertDismissed && (
+        <div className="kma-alert-banner" role="alert">
+          <AlertTriangle size={14} color="#fbbf24" />
+          <span className="kma-alert-badge mono">KMA 특보</span>
+          <span className="kma-alert-text">
+            {koreaAlerts[0].title} ({koreaAlerts[0].issuedAt})
+          </span>
+          <button
+            type="button"
+            className="kma-alert-close"
+            onClick={() => setAlertDismissed(true)}
+            aria-label="특보 배너 닫기"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      )}
+
       <TelemetryHud
         telemetry={telemetry}
         earthquakes={displayedEarthquakes}
         ocean={weatherOcean.ocean}
-        airQuality={airQuality.clusters}
+        airQuality={displayedAirClusters}
+        lang={lang}
         onQuickSelect={handleSelectItem}
       />
 
@@ -617,9 +730,10 @@ export default function TerraPulseApp() {
       <EventFeedDrawer
         open={feedOpen}
         earthquakes={displayedEarthquakes}
-        disasters={disasters}
+        disasters={displayedDisasters}
         ocean={weatherOcean.ocean}
-        airQuality={airQuality.clusters}
+        airQuality={displayedAirClusters}
+        lang={lang}
         onClose={() => setFeedOpen(false)}
         onSelect={handleSelectItem}
       />
@@ -629,7 +743,11 @@ export default function TerraPulseApp() {
         earthquakes={displayedEarthquakes}
         airQuality={airQuality.clusters}
         isPinned={selectedIsPinned}
+        compareCount={compareCount}
+        lang={lang}
         onTogglePin={handleTogglePin}
+        onAddCompare={handleAddCompare}
+        onOpenCompare={() => setCompareOpen(true)}
         onClose={() => setSelected(null)}
       />
 
@@ -643,6 +761,7 @@ export default function TerraPulseApp() {
         quakeCutoffMs={quakeCutoffMs}
         visibleQuakeCount={displayedEarthquakes.length}
         totalQuakeCount={earthquakes.length}
+        lang={lang}
         onChangeMode={(m) => {
           setTimelineMode(m);
           setTimelinePlaying(false);
@@ -668,18 +787,37 @@ export default function TerraPulseApp() {
         layers={layers}
         quakeWindow={quakeWindow}
         minMag={minMag}
+        airDisplayMode={airDisplayMode}
+        badAirOnly={badAirOnly}
+        disasterCategories={disasterCategories}
+        lang={lang}
         quakeCount={displayedEarthquakes.length}
-        disasterCount={disasters.length}
+        disasterCount={displayedDisasters.length}
         weatherCount={displayedWeather.length}
         oceanCount={weatherOcean.ocean.length}
-        airClusterCount={airQuality.clusters.length}
+        airClusterCount={displayedAirClusters.length}
         timelineOpen={timelineOpen}
         savedPins={savedPins}
         onToggleLayer={handleToggleLayer}
         onToggleTimeline={() => setTimelineOpen((v) => !v)}
         onChangeQuakeWindow={setQuakeWindow}
         onChangeMinMag={setMinMag}
+        onChangeAirDisplayMode={setAirDisplayMode}
+        onToggleBadAirOnly={() => setBadAirOnly((v) => !v)}
+        onToggleDisasterCategory={handleToggleDisasterCategory}
         onQuickJump={handleSearchLocation}
+      />
+
+      <CompareModal
+        open={compareOpen}
+        slotA={compareA}
+        slotB={compareB}
+        earthquakes={displayedEarthquakes}
+        airQuality={airQuality.clusters}
+        lang={lang}
+        onSwap={handleSwapCompare}
+        onClearAll={handleClearCompare}
+        onClose={() => setCompareOpen(false)}
       />
 
       <ArchitectureModal

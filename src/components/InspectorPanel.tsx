@@ -2,7 +2,6 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Activity,
   ArrowUpRight,
   ChevronDown,
   ChevronUp,
@@ -12,10 +11,15 @@ import {
   Gauge,
   MapPin,
   Thermometer,
-  Waves,
   Wind,
   X,
 } from "lucide-react";
+import {
+  AqiGradeIcon,
+  OceanWaveIcon,
+  QuakeIcon,
+  WeatherConditionIcon,
+} from "./DomainIcons";
 import {
   formatCoord,
   getCardinalDirKo,
@@ -315,7 +319,7 @@ export default function InspectorPanel({
         <div className="inspector-hero">
           <div className="hero-badge-row">
             <span className="hero-pill mono" style={{ color, backgroundColor: `${color}22` }}>
-              <Activity size={13} /> M {q.mag.toFixed(1)}
+              <QuakeIcon size={15} color={color} /> M {q.mag.toFixed(1)}
             </span>
             <span className="hero-tag">{timeAgoKo(q.time)}</span>
             {q.tsunami && <span className="tag-warn">쓰나미 경보 확인</span>}
@@ -334,7 +338,7 @@ export default function InspectorPanel({
         <div className="inspector-hero">
           <div className="hero-badge-row">
             <span className="hero-pill mono" style={{ color: "#38bdf8", background: "rgba(56,189,248,0.16)" }}>
-              <Thermometer size={13} /> {w.tempC.toFixed(1)}°C
+              <WeatherConditionIcon code={w.weatherCode} isDay={w.isDay} size={16} /> {w.tempC.toFixed(1)}°C
             </span>
             <span className="hero-tag">{getWeatherDescriptionKo(w.weatherCode)}</span>
           </div>
@@ -360,7 +364,7 @@ export default function InspectorPanel({
         <div className="inspector-hero">
           <div className="hero-badge-row">
             <span className="hero-pill mono" style={{ color: "#2dd4bf", background: "rgba(45,212,191,0.16)" }}>
-              <Waves size={13} /> 파고 {o.waveHeightM.toFixed(2)} m
+              <OceanWaveIcon size={15} color="#2dd4bf" /> 파고 {o.waveHeightM.toFixed(2)} m
             </span>
             <span className="hero-tag">{seaState}</span>
           </div>
@@ -380,6 +384,7 @@ export default function InspectorPanel({
         <div className="inspector-hero">
           <div className="hero-badge-row">
             <span className="hero-pill mono" style={{ color: lvl.color, background: lvl.bg }}>
+              <AqiGradeIcon pm25={a.pm25} size={16} />
               PM2.5 {a.pm25.toFixed(1)} µg/m³ · {lvl.label}
             </span>
             {a.khaiValue != null && (
@@ -536,7 +541,16 @@ export default function InspectorPanel({
 
         <section className="inspector-section">
           <h3 className="section-label">
-            기상 모델 텔레메트리 {loading && <span className="loading-dot">수신 중...</span>}
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              {inspect?.weather && (
+                <WeatherConditionIcon code={inspect.weather.weatherCode} size={16} />
+              )}
+              <span>
+                기상 모델 텔레메트리
+                {inspect?.weather ? ` · ${getWeatherDescriptionKo(inspect.weather.weatherCode)}` : ""}
+              </span>
+            </span>
+            {loading && <span className="loading-dot">수신 중...</span>}
           </h3>
           {inspect?.weather ? (
             <>
@@ -609,7 +623,7 @@ export default function InspectorPanel({
             <div className="metric-grid">
               <div className="metric-cell">
                 <span className="metric-k">
-                  <Waves size={12} /> 유의 파고
+                  <OceanWaveIcon size={13} color="#2dd4bf" /> 유의 파고
                 </span>
                 <strong className="metric-v mono" style={{ color: "#2dd4bf" }}>
                   {(

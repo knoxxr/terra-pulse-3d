@@ -1,18 +1,16 @@
 "use client";
 
 import React, { useState } from "react";
+import { Cloud, SlidersHorizontal } from "lucide-react";
 import {
-  Activity,
-  Cloud,
-  Moon,
-  Radio,
-  RotateCw,
-  SlidersHorizontal,
-  Sun,
-  Tag,
-  Waves,
-  Wind,
-} from "lucide-react";
+  AirDustIcon,
+  DayNightIcon,
+  GlobeSpinIcon,
+  MapLabelIcon,
+  OceanWaveIcon,
+  QuakeIcon,
+  WeatherIcon,
+} from "./DomainIcons";
 import { QUICK_JUMP_PRESETS } from "@/lib/locations";
 import type { LayerVisibility, QuakeWindow } from "@/types/telemetry";
 
@@ -57,7 +55,7 @@ export default function LayerDock({
                 className={`seg-btn seg-btn-icon ${layers.clouds ? "is-selected" : ""}`}
                 onClick={() => onToggleLayer("clouds")}
               >
-                <Cloud size={13} />
+                <Cloud size={14} />
                 <span>구름층</span>
               </button>
               <button
@@ -65,7 +63,7 @@ export default function LayerDock({
                 className={`seg-btn seg-btn-icon ${layers.labels ? "is-selected" : ""}`}
                 onClick={() => onToggleLayer("labels")}
               >
-                <Tag size={13} />
+                <MapLabelIcon size={14} />
                 <span>지명·기온</span>
               </button>
               <button
@@ -73,7 +71,7 @@ export default function LayerDock({
                 className={`seg-btn seg-btn-icon ${layers.dayNight ? "is-selected" : ""}`}
                 onClick={() => onToggleLayer("dayNight")}
               >
-                {layers.dayNight ? <Moon size={13} /> : <Sun size={13} />}
+                <DayNightIcon size={14} active={layers.dayNight} />
                 <span>주야간 조명</span>
               </button>
             </div>
@@ -171,7 +169,7 @@ export default function LayerDock({
           onClick={() => onToggleLayer("earthquakes")}
           aria-pressed={layers.earthquakes}
         >
-          <Activity size={17} />
+          <QuakeIcon size={18} />
           <span className="dock-text">지진</span>
           <span className="dock-count mono">{quakeCount}</span>
         </button>
@@ -183,7 +181,7 @@ export default function LayerDock({
           onClick={() => onToggleLayer("weather")}
           aria-pressed={layers.weather}
         >
-          <Wind size={17} />
+          <WeatherIcon size={18} />
           <span className="dock-text">기상</span>
           <span className="dock-count mono">{weatherCount}</span>
         </button>
@@ -195,7 +193,7 @@ export default function LayerDock({
           onClick={() => onToggleLayer("ocean")}
           aria-pressed={layers.ocean}
         >
-          <Waves size={17} />
+          <OceanWaveIcon size={18} />
           <span className="dock-text">해양</span>
           <span className="dock-count mono">{oceanCount}</span>
         </button>
@@ -207,8 +205,8 @@ export default function LayerDock({
           onClick={() => onToggleLayer("airQuality")}
           aria-pressed={layers.airQuality}
         >
-          <Radio size={17} />
-          <span className="dock-text">환경센서</span>
+          <AirDustIcon size={18} />
+          <span className="dock-text">대기질</span>
           <span className="dock-count mono">{airClusterCount}</span>
         </button>
 
@@ -233,7 +231,7 @@ export default function LayerDock({
           title={layers.labels ? "지명·기온 라벨 표시 중" : "지명 라벨 숨김"}
           aria-label="지명 라벨 전환"
         >
-          <Tag size={15} />
+          <MapLabelIcon size={16} />
         </button>
 
         <button
@@ -244,7 +242,7 @@ export default function LayerDock({
           title={layers.dayNight ? "실시간 주야간 조명 켜짐" : "균일 지도 모드"}
           aria-label="주야간 조명 전환"
         >
-          {layers.dayNight ? <Moon size={16} /> : <Sun size={16} />}
+          <DayNightIcon size={17} active={layers.dayNight} />
         </button>
 
         <button
@@ -255,7 +253,7 @@ export default function LayerDock({
           title="자동 자전 전환"
           aria-label="자동 자전 전환"
         >
-          <RotateCw size={16} className={layers.autoRotate ? "spin-slow" : ""} />
+          <GlobeSpinIcon size={17} spinning={layers.autoRotate} />
         </button>
       </nav>
     </div>

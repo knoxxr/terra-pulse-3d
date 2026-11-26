@@ -813,13 +813,14 @@ button {
 }
 
 .feed-badge {
-  min-width: 52px;
+  min-width: 56px;
   height: 32px;
   padding: 0 7px;
   border-radius: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 4px;
   font-size: 0.76rem;
   font-weight: 700;
   flex-shrink: 0;

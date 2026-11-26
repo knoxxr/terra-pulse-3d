@@ -1,14 +1,8 @@
 "use client";
 
 import React, { useMemo, useRef, useState } from "react";
-import {
-  Activity,
-  Compass,
-  Info,
-  ListFilter,
-  Search,
-  X,
-} from "lucide-react";
+import { Info, Search, X } from "lucide-react";
+import { GlobeSpinIcon, RadarAlertIcon } from "./DomainIcons";
 import {
   GLOBAL_OCEAN_ANCHORS,
   GLOBAL_WEATHER_ANCHORS,
@@ -125,7 +119,7 @@ export default function TopBar({
       <div className="top-bar-left">
         <div className="brand-chip">
           <div className="brand-emblem" aria-hidden="true">
-            <Compass size={17} strokeWidth={2.2} />
+            <GlobeSpinIcon size={18} />
           </div>
           <div className="brand-copy">
             <h1 className="brand-title">TerraPulse 3D</h1>
@@ -214,7 +208,7 @@ export default function TopBar({
           onClick={onToggleFeed}
           aria-pressed={feedOpen}
         >
-          {feedOpen ? <ListFilter size={16} /> : <Activity size={16} />}
+          <RadarAlertIcon size={17} />
           <span className="btn-label-desktop">실시간 특보</span>
         </button>
       </div>

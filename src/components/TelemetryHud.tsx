@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Activity, Clock, Crosshair, Radio, Waves } from "lucide-react";
+import { Clock, Crosshair } from "lucide-react";
+import { AirDustIcon, OceanWaveIcon, QuakeIcon } from "./DomainIcons";
 import { formatCoord, getMagnitudeColor, getPm25Level } from "@/lib/geo";
 import type {
   AirQualityCluster,
@@ -70,7 +71,7 @@ export default function TelemetryHud({
             onClick={() => onQuickSelect({ kind: "earthquake", data: strongestQuake }, 1.68)}
             title={`최대 규모 지진 이동: ${strongestQuake.place}`}
           >
-            <Activity size={13} style={{ color: getMagnitudeColor(strongestQuake.mag) }} />
+            <QuakeIcon size={15} color={getMagnitudeColor(strongestQuake.mag)} />
             <span className="extreme-k">최대 지진</span>
             <strong className="extreme-v mono" style={{ color: getMagnitudeColor(strongestQuake.mag) }}>
               M {strongestQuake.mag.toFixed(1)}
@@ -85,7 +86,7 @@ export default function TelemetryHud({
             onClick={() => onQuickSelect({ kind: "ocean", data: highestWave }, 1.95)}
             title={`최고 파고 해역 이동: ${highestWave.nameKo}`}
           >
-            <Waves size={13} style={{ color: "#2dd4bf" }} />
+            <OceanWaveIcon size={15} color="#2dd4bf" />
             <span className="extreme-k">최고 파고</span>
             <strong className="extreme-v mono" style={{ color: "#2dd4bf" }}>
               {highestWave.waveHeightM.toFixed(1)}m
@@ -98,9 +99,9 @@ export default function TelemetryHud({
             type="button"
             className="extreme-chip"
             onClick={() => onQuickSelect({ kind: "air", data: highestPm25 }, 1.65)}
-            title={`최고 초미세먼지 권역 이동: ${highestPm25.country}`}
+            title={`최고 초미세먼지 권역 이동: ${highestPm25.stationName ?? highestPm25.country}`}
           >
-            <Radio size={13} style={{ color: getPm25Level(highestPm25.pm25).color }} />
+            <AirDustIcon size={15} color={getPm25Level(highestPm25.pm25).color} />
             <span className="extreme-k">최고 PM2.5</span>
             <strong
               className="extreme-v mono"

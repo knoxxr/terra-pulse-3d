@@ -1,7 +1,14 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { Activity, MapPin, Radio, Waves, X } from "lucide-react";
+import { X } from "lucide-react";
+import {
+  AirDustIcon,
+  AqiGradeIcon,
+  KoreaBadgeIcon,
+  OceanWaveIcon,
+  QuakeIcon,
+} from "./DomainIcons";
 import { getMagnitudeColor, getPm25Level, timeAgoKo } from "@/lib/geo";
 import type {
   AirQualityCluster,
@@ -77,7 +84,7 @@ export default function EventFeedDrawer({
           className={`feed-tab ${tab === "korea" ? "is-active" : ""}`}
           onClick={() => setTab("korea")}
         >
-          <MapPin size={13} />
+          <KoreaBadgeIcon size={14} />
           <span>한국 대기</span>
         </button>
         <button
@@ -87,7 +94,7 @@ export default function EventFeedDrawer({
           className={`feed-tab ${tab === "quakes" ? "is-active" : ""}`}
           onClick={() => setTab("quakes")}
         >
-          <Activity size={13} />
+          <QuakeIcon size={14} />
           <span>지진</span>
         </button>
         <button
@@ -97,7 +104,7 @@ export default function EventFeedDrawer({
           className={`feed-tab ${tab === "air" ? "is-active" : ""}`}
           onClick={() => setTab("air")}
         >
-          <Radio size={13} />
+          <AirDustIcon size={14} />
           <span>글로벌 PM</span>
         </button>
         <button
@@ -107,7 +114,7 @@ export default function EventFeedDrawer({
           className={`feed-tab ${tab === "ocean" ? "is-active" : ""}`}
           onClick={() => setTab("ocean")}
         >
-          <Waves size={13} />
+          <OceanWaveIcon size={14} />
           <span>파고</span>
         </button>
       </div>
@@ -127,7 +134,8 @@ export default function EventFeedDrawer({
                   className="feed-badge mono"
                   style={{ color: lvl.color, backgroundColor: lvl.bg }}
                 >
-                  {a.pm25.toFixed(0)}
+                  <AqiGradeIcon pm25={a.pm25} size={15} />
+                  <span>{a.pm25.toFixed(0)}</span>
                 </span>
                 <div className="feed-item-body">
                   <div className="feed-item-title">
@@ -198,7 +206,8 @@ export default function EventFeedDrawer({
                   className="feed-badge mono"
                   style={{ color: lvl.color, backgroundColor: lvl.bg }}
                 >
-                  {a.pm25.toFixed(0)}
+                  <AqiGradeIcon pm25={a.pm25} size={15} />
+                  <span>{a.pm25.toFixed(0)}</span>
                 </span>
                 <div className="feed-item-body">
                   <div className="feed-item-title">

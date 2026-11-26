@@ -80,6 +80,8 @@ interface ScalableSprite {
   baseScale: number;
   minDist?: number;
   maxDist?: number;
+  normal?: THREE.Vector3;
+  priority?: number;
 }
 
 const EARTH_RADIUS = 1.0;
@@ -403,6 +405,7 @@ export default function EarthGlobe({
     };
     windParticles?: {
       geo: THREE.BufferGeometry;
+      mat: THREE.PointsMaterial;
       starts: THREE.Vector3[];
       ends: THREE.Vector3[];
       speeds: number[];
@@ -792,16 +795,16 @@ export default function EarthGlobe({
 
       const candidates: THREE.Object3D[] = [];
       if (d.layers.earthquakes && h.quakeSprites) {
-        for (const s of h.quakeSprites) candidates.push(s.sprite);
+        for (const s of h.quakeSprites) if (s.sprite.visible) candidates.push(s.sprite);
       }
       if (d.layers.disasters && h.disasterSprites) {
-        for (const s of h.disasterSprites) candidates.push(s.sprite);
+        for (const s of h.disasterSprites) if (s.sprite.visible) candidates.push(s.sprite);
       }
       if (d.layers.weather && h.weatherSprites) {
-        for (const s of h.weatherSprites) candidates.push(s.sprite);
+        for (const s of h.weatherSprites) if (s.sprite.visible) candidates.push(s.sprite);
       }
       if (d.layers.ocean && h.oceanSprites) {
-        for (const s of h.oceanSprites) candidates.push(s.sprite);
+        for (const s of h.oceanSprites) if (s.sprite.visible) candidates.push(s.sprite);
       }
       if (d.layers.airQuality && h.airBadgeSprites) {
         for (const s of h.airBadgeSprites) {
@@ -1157,7 +1160,11 @@ export default function EarthGlobe({
       }
 
       // Altitude-adaptive billboard icon scaling so icons stay sharp & uncrowded at EVERY zoom level!
-      const spriteScale = Math.max(0.28, Math.min(1.12, (camDist - 0.88) / 1.75));
+      const spriteScale = Math.max(0.24, Math.min(1.08, (camDist - 0.94) / 1.72));
+      const viewW = container.clientWidth || window.innerWidth;
+      const viewH = container.clientHeight || window.innerHeight;
+      camDir.copy(camera.position).normalize();
+
       const scaleSpriteList = (list?: ScalableSprite[]) => {
         if (!list) return;
         for (let i = 0; i < list.length; i++) {
@@ -1176,25 +1183,86 @@ export default function EarthGlobe({
         }
       };
 
-      if (h.quakeGroup?.visible) scaleSpriteList(h.quakeSprites);
-      if (h.disasterGroup?.visible) scaleSpriteList(h.disasterSprites);
-      if (h.weatherGroup?.visible) scaleSpriteList(h.weatherSprites);
-      if (h.oceanGroup?.visible) scaleSpriteList(h.oceanSprites);
-      if (h.airGroup?.visible) scaleSpriteList(h.airBadgeSprites);
+      // Screen-space 2D collision decluttering: guarantees ZERO overlapping icon walls
+      // even when 150+ live Korean AirKorea stations are active; zooming in progressively reveals more!
+      const scaleDeclutteredSprites = (
+        list: ScalableSprite[] | undefined,
+        minSepPx: number,
+        maxVisible: number
+      ) => {
+        if (!list || list.length === 0) return;
+        const minSepSq = minSepPx * minSepPx;
+        const placedX: number[] = [];
+        const placedY: number[] = [];
+        let shown = 0;
 
-      // Altitude-adaptive PM2.5 pillar/bubble scaling for ultra-crisp dense regional readability
+        for (let i = 0; i < list.length; i++) {
+          const item = list[i];
+          if (shown >= maxVisible) {
+            item.sprite.visible = false;
+            continue;
+          }
+          if (item.maxDist !== undefined && camDist > item.maxDist) {
+            item.sprite.visible = false;
+            continue;
+          }
+          if (item.minDist !== undefined && camDist < item.minDist) {
+            item.sprite.visible = false;
+            continue;
+          }
+          if (item.normal && item.normal.dot(camDir) < 0.14) {
+            item.sprite.visible = false;
+            continue;
+          }
+
+          projVec.copy(item.sprite.position).project(camera);
+          if (projVec.z > 1) {
+            item.sprite.visible = false;
+            continue;
+          }
+          const sx = (projVec.x * 0.5 + 0.5) * viewW;
+          const sy = (-projVec.y * 0.5 + 0.5) * viewH;
+          if (sx < -24 || sx > viewW + 24 || sy < -24 || sy > viewH + 24) {
+            item.sprite.visible = false;
+            continue;
+          }
+
+          let collides = false;
+          for (let j = 0; j < placedX.length; j++) {
+            const dx = sx - placedX[j];
+            const dy = sy - placedY[j];
+            if (dx * dx + dy * dy < minSepSq) {
+              collides = true;
+              break;
+            }
+          }
+          if (collides) {
+            item.sprite.visible = false;
+            continue;
+          }
+
+          placedX.push(sx);
+          placedY.push(sy);
+          shown++;
+          item.sprite.visible = true;
+          const s = item.baseScale * spriteScale;
+          item.sprite.scale.set(s, s, 1);
+        }
+      };
+
+      // Altitude-adaptive PM2.5 pillar/bubble scaling (runs before badge decluttering so badge pos is fresh)
       if (h.airGroup?.visible && h.airMesh && h.airInstances && h.airInstances.length > 0) {
-        const airScale = Math.max(0.32, Math.min(1.0, (camDist - 0.92) / 1.65));
+        const airScale = Math.max(0.28, Math.min(1.0, (camDist - 0.92) / 1.65));
         if (h.lastAirScale === undefined || Math.abs(airScale - h.lastAirScale) > 0.015) {
           h.lastAirScale = airScale;
-          const wScale = 0.44 + airScale * 0.56;
-          const hScale = 0.28 + airScale * 0.72;
+          const wScale = 0.34 + airScale * 0.66;
+          const hScale = 0.22 + airScale * 0.78;
           for (let i = 0; i < h.airInstances.length; i++) {
             const meta = h.airInstances[i];
             airDummy.position.copy(meta.pos);
             airDummy.quaternion.copy(meta.quat);
             if (meta.mode === "bubble") {
-              const bs = meta.baseWidth * (0.48 + airScale * 0.52);
+              const bs = meta.baseWidth * (0.42 + airScale * 0.58);
               airDummy.scale.set(bs, bs, bs);
             } else {
               const effH = meta.baseHeight * hScale;
@@ -1202,7 +1270,7 @@ export default function EarthGlobe({
               if (meta.badgeSprite) {
                 meta.badgeSprite.position
                   .copy(meta.normal)
-                  .multiplyScalar(EARTH_RADIUS + effH + 0.011 * spriteScale);
+                  .multiplyScalar(EARTH_RADIUS + effH + 0.009 * spriteScale);
               }
             }
             airDummy.updateMatrix();
@@ -1210,6 +1278,14 @@ export default function EarthGlobe({
           }
           h.airMesh.instanceMatrix.needsUpdate = true;
         }
+      }
+
+      if (h.quakeGroup?.visible) scaleDeclutteredSprites(h.quakeSprites, isMobile ? 24 : 20, 48);
+      if (h.disasterGroup?.visible) scaleSpriteList(h.disasterSprites);
+      if (h.weatherGroup?.visible) scaleSpriteList(h.weatherSprites);
+      if (h.oceanGroup?.visible) scaleSpriteList(h.oceanSprites);
+      if (h.airGroup?.visible) {
+        scaleDeclutteredSprites(h.airBadgeSprites, isMobile ? 42 : 38, isMobile ? 16 : 26);
       }
 
       if (h.pulseRings && h.quakeGroup?.visible) {
@@ -1223,7 +1299,9 @@ export default function EarthGlobe({
       }
 
       if (h.windParticles && h.windStreamGroup?.visible) {
-        const { geo, starts, ends, speeds, phases, trailCount } = h.windParticles;
+        const { geo, mat, starts, ends, speeds, phases, trailCount } = h.windParticles;
+        // Scale wind droplets delicately at close zoom so they never bloom into blurry orbs
+        mat.size = THREE.MathUtils.lerp(0.0085, 0.025, 1 - zoomNorm);
         const posAttr = geo.getAttribute("position") as THREE.BufferAttribute;
         const arr = posAttr.array as Float32Array;
         for (let i = 0; i < starts.length; i++) {
@@ -1439,12 +1517,19 @@ export default function EarthGlobe({
       sprite.scale.set(baseScale, baseScale, 1);
       sprite.userData = { kind: "earthquake", index: idx };
       group.add(sprite);
-      h.quakeSprites!.push({ sprite, baseScale });
+      h.quakeSprites!.push({
+        sprite,
+        baseScale,
+        normal: new THREE.Vector3(x, y, z).normalize(),
+        priority: q.mag + (q.tsunami ? 10 : 0),
+      });
 
       color.set(getMagnitudeColor(q.mag));
       stemPos.push(bx, by, bz, x, y, z);
       stemCol.push(color.r, color.g, color.b, color.r, color.g, color.b);
     });
+
+    h.quakeSprites!.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
 
     const stemGeo = new THREE.BufferGeometry();
     stemGeo.setAttribute("position", new THREE.Float32BufferAttribute(stemPos, 3));
@@ -1598,22 +1683,18 @@ export default function EarthGlobe({
     const partGeo = new THREE.BufferGeometry();
     partGeo.setAttribute("position", new THREE.BufferAttribute(partPositions, 3));
     partGeo.setAttribute("color", new THREE.BufferAttribute(partColors, 3));
-    streamGroup.add(
-      new THREE.Points(
-        partGeo,
-        new THREE.PointsMaterial({
-          map: h.windDropSprite,
-          vertexColors: true,
-          size: 0.032,
-          transparent: true,
-          opacity: 0.94,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
-          sizeAttenuation: true,
-        })
-      )
-    );
-    h.windParticles = { geo: partGeo, starts, ends, speeds, phases, trailCount };
+    const partMat = new THREE.PointsMaterial({
+      map: h.windDropSprite,
+      vertexColors: true,
+      size: 0.022,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      sizeAttenuation: true,
+    });
+    streamGroup.add(new THREE.Points(partGeo, partMat));
+    h.windParticles = { geo: partGeo, mat: partMat, starts, ends, speeds, phases, trailCount };
   }, [weather]);
 
   // 5. Rebuild Ocean Wave Crest Icon Sprites + Current Vectors
@@ -1732,6 +1813,18 @@ export default function EarthGlobe({
     const color = new THREE.Color();
     const metas: AirInstanceMeta[] = [];
 
+    // Pick 1 highest-PM2.5 representative cluster per Korean Sido so 17 provinces are prioritized cleanly
+    const sidoBestIdx = new Map<string, { idx: number; pm25: number }>();
+    airQuality.forEach((cluster, idx) => {
+      if (cluster.country !== "KR") return;
+      const sido = cluster.sidoName || cluster.stationName?.split(" ")[0] || "KR";
+      const prev = sidoBestIdx.get(sido);
+      if (!prev || cluster.pm25 > prev.pm25) {
+        sidoBestIdx.set(sido, { idx, pm25: cluster.pm25 });
+      }
+    });
+    const sidoRepIndices = new Set(Array.from(sidoBestIdx.values()).map((v) => v.idx));
+
     airQuality.forEach((cluster, idx) => {
       const surfaceElev = isBubble ? 0.0075 : 0.002;
       const [x, y, z] = latLngToVector3(cluster.lat, cluster.lng, EARTH_RADIUS + surfaceElev);
@@ -1743,7 +1836,7 @@ export default function EarthGlobe({
       const widthBoost = isBubble
         ? Math.min(1.65, 0.72 + Math.sqrt(cluster.pm25) * 0.085)
         : cluster.country === "KR"
-          ? 0.78
+          ? 0.62
           : Math.min(1.28, 0.78 + Math.log10(Math.max(1, cluster.sensorCount)) * 0.18);
 
       dummy.position.copy(pos);
@@ -1761,7 +1854,7 @@ export default function EarthGlobe({
 
       let badgeSprite: THREE.Sprite | undefined;
       if (cluster.country === "KR" || cluster.pm25 >= 75) {
-        const badgeElev = isBubble ? 0.022 : barHeight + 0.012;
+        const badgeElev = isBubble ? 0.02 : barHeight + 0.01;
         const topPos = normal.clone().multiplyScalar(EARTH_RADIUS + badgeElev);
         const aqiKey = classifyAqiIcon(cluster.pm25);
         const sMat = new THREE.SpriteMaterial({
@@ -1771,15 +1864,24 @@ export default function EarthGlobe({
         });
         const badge = new THREE.Sprite(sMat);
         badge.position.copy(topPos);
-        const baseScale = cluster.country === "KR" ? 0.04 : 0.046;
+        const baseScale = cluster.country === "KR" ? 0.032 : 0.044;
         badge.scale.set(baseScale, baseScale, 1);
         badge.userData = { kind: "air", index: idx };
         group.add(badge);
         badgeSprite = badge;
+
+        const isSidoRep = sidoRepIndices.has(idx);
+        const priority =
+          (cluster.pm25 >= 75 ? 3000 : cluster.pm25 >= 36 ? 2000 : 0) +
+          (isSidoRep ? 1000 : 0) +
+          cluster.pm25;
+
         h.airBadgeSprites!.push({
           sprite: badge,
           baseScale,
           maxDist: cluster.country === "KR" ? 1.85 : 3.2,
+          normal,
+          priority,
         });
       }
 
@@ -1793,6 +1895,8 @@ export default function EarthGlobe({
         badgeSprite,
       });
     });
+
+    h.airBadgeSprites!.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
 
     inst.instanceMatrix.needsUpdate = true;
     if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
